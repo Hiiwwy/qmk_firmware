@@ -52,6 +52,13 @@ export override QMK_USERSPACE := $(shell \
 # avoid 'Entering|Leaving directory' messages
 MAKEFLAGS += --no-print-directory
 
+# The top-level QMK Makefile wraps keyboard builds in a shell command. On some
+# MSYS/GNU make combinations the jobserver handles are not available inside the
+# wrapped sub-make, so forward the user's explicit -j/--jobs value directly.
+# This keeps normal invocations such as `make -j8 keyboard:keymap` parallel.
+QMK_SUBMAKE_JOBS := $(lastword $(filter -j% --jobs=%,$(MAKEFLAGS)))
+QMK_SUBMAKE_MAKEFLAGS := $(filter-out --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
+
 ON_ERROR := error_occurred=1
 
 BREAK_ON_ERRORS = no
@@ -260,7 +267,7 @@ define PARSE_KEYMAP
     # Specify the variables that we are passing forward to submake
     MAKE_VARS := KEYBOARD=$$(CURRENT_KB) KEYMAP=$$(CURRENT_KM) QMK_BIN=$$(QMK_BIN)
     # And the first part of the make command
-    MAKE_CMD := $$(MAKE) -r -R -C $(ROOT_DIR) -f $(BUILDDEFS_PATH)/build_keyboard.mk $$(MAKE_TARGET)
+    MAKE_CMD := MAKEFLAGS="$(QMK_SUBMAKE_MAKEFLAGS)" $$(MAKE) $(QMK_SUBMAKE_JOBS) -r -R -C $(ROOT_DIR) -f $(BUILDDEFS_PATH)/build_keyboard.mk $$(MAKE_TARGET)
     # The message to display
     MAKE_MSG := $$(MSG_MAKE_KB)
     # We run the command differently, depending on if we want more output or not

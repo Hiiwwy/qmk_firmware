@@ -1,0 +1,6 @@
+ifneq ($(filter N32H487 N32H487ZE N32H487ZEL7 N32H47X_48X,$(N32_MCU)),)
+    PLATFORM_KEY = n32_freertos
+    MCU_FAMILY = N32H47x_48x
+    MCU_SERIES = N32H487
+    MCU_ARCH = cortex-m4
+endif
