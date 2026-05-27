@@ -16,8 +16,13 @@ static uint8_t keyboard_led_state;
 
 __ALIGN_BEGIN USB_CORE_MODULE USB_dev __ALIGN_END;
 
-static volatile uint8_t hs_prev_xfer_complete = 1;
-static uint8_t hs_keyboard_report[8] __attribute__((aligned(4)));
+static volatile uint8_t hs_shared_prev_xfer_complete = 1;
+static volatile uint8_t hs_raw_prev_xfer_complete = 1;
+static uint8_t hs_shared_report[HID_IN_PACKET] __attribute__((aligned(4)));
+static uint8_t hs_raw_report[RAW_IN_PACKET] __attribute__((aligned(4)));
+static uint16_t n32_usb_report_rate_hz = 8000;
+static uint32_t n32_usb_report_interval_cycles;
+static uint32_t n32_usb_last_shared_tx_cycle;
 
 static USBD_User_cb_TypeDef n32_usb_user_cb = {
     .Init = n32_usbhs_user_init,
@@ -42,43 +47,136 @@ static void n32_usbhs_config_clk(void) {
     RCC->USBHSCTRL2 = (RCC->USBHSCTRL2 & (~(0x3 << 16))) | (0x3 << 16);
 }
 
+static void n32_usbhs_enable_cycle_counter(void) {
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+static void n32_usbhs_update_report_interval(void) {
+    uint32_t cycles_per_second = SystemCoreClock ? SystemCoreClock : 240000000U;
+
+    n32_usb_report_interval_cycles = cycles_per_second / n32_usb_report_rate_hz;
+}
+
+static void n32_usbhs_wait_report_slot(void) {
+    if (n32_usb_report_interval_cycles == 0) {
+        return;
+    }
+
+    uint32_t now = DWT->CYCCNT;
+    while ((uint32_t)(now - n32_usb_last_shared_tx_cycle) < n32_usb_report_interval_cycles) {
+        now = DWT->CYCCNT;
+    }
+
+    n32_usb_last_shared_tx_cycle = now;
+}
+
 void n32_usb_init(void) {
     n32_usbhs_config_clk();
+    n32_usbhs_enable_cycle_counter();
+    n32_usbhs_update_report_interval();
     USBD_Init(&USB_dev, &USBD_desc, &n32_usbhs_keyboard_cb, &n32_usb_user_cb);
 }
 
 void n32_usb_task(void) {}
 
+#ifdef RAW_ENABLE
+void raw_hid_task(void) {
+    n32_usbhs_raw_hid_task();
+}
+#endif
+
 uint8_t n32_usb_keyboard_leds(void) {
     return keyboard_led_state;
 }
 
+void n32_usb_set_report_rate_hz(uint16_t hz) {
+    switch (hz) {
+        case 1000:
+        case 2000:
+        case 4000:
+        case 8000:
+            n32_usb_report_rate_hz = hz;
+            break;
+        default:
+            n32_usb_report_rate_hz = 8000;
+            break;
+    }
+
+    n32_usbhs_update_report_interval();
+}
+
+uint16_t n32_usb_get_report_rate_hz(void) {
+    return n32_usb_report_rate_hz;
+}
+
 void n32_usb_send_keyboard(report_keyboard_t *report) {
-    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_prev_xfer_complete) {
+    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
         return;
     }
 
-    memcpy(hs_keyboard_report, report, sizeof(hs_keyboard_report));
-    hs_prev_xfer_complete = 0;
-    USBDEV_EP_Tx(&USB_dev, N32_USBHS_HID_IN_EP, hs_keyboard_report, sizeof(hs_keyboard_report));
+    n32_usbhs_wait_report_slot();
+    memcpy(hs_shared_report, report, sizeof(*report));
+    hs_shared_prev_xfer_complete = 0;
+    USBDEV_EP_Tx(&USB_dev, N32_USBHS_HID_IN_EP, hs_shared_report, sizeof(*report));
 }
 
 void n32_usb_send_nkro(report_nkro_t *report) {
-    (void)report;
+    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+        return;
+    }
+
+    n32_usbhs_wait_report_slot();
+    memcpy(hs_shared_report, report, sizeof(*report));
+    hs_shared_prev_xfer_complete = 0;
+    USBDEV_EP_Tx(&USB_dev, N32_USBHS_HID_IN_EP, hs_shared_report, sizeof(*report));
 }
 
 void n32_usb_send_mouse(report_mouse_t *report) {
-    (void)report;
+    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+        return;
+    }
+
+    n32_usbhs_wait_report_slot();
+    memcpy(hs_shared_report, report, sizeof(*report));
+    hs_shared_prev_xfer_complete = 0;
+    USBDEV_EP_Tx(&USB_dev, N32_USBHS_HID_IN_EP, hs_shared_report, sizeof(*report));
 }
 
 void n32_usb_send_extra(report_extra_t *report) {
-    (void)report;
+    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+        return;
+    }
+
+    n32_usbhs_wait_report_slot();
+    memcpy(hs_shared_report, report, sizeof(*report));
+    hs_shared_prev_xfer_complete = 0;
+    USBDEV_EP_Tx(&USB_dev, N32_USBHS_HID_IN_EP, hs_shared_report, sizeof(*report));
 }
+
+#ifdef RAW_ENABLE
+void n32_usb_send_raw_hid(uint8_t *data, uint8_t length) {
+    if (length != RAW_IN_PACKET || USB_dev.dev.device_status != USB_CONFIGURED || !hs_raw_prev_xfer_complete) {
+        return;
+    }
+
+    memcpy(hs_raw_report, data, RAW_IN_PACKET);
+    hs_raw_prev_xfer_complete = 0;
+    USBDEV_EP_Tx(&USB_dev, N32_USBHS_RAW_IN_EP, hs_raw_report, RAW_IN_PACKET);
+}
+#endif
 
 void n32_usb_set_keyboard_leds(uint8_t leds) {
     keyboard_led_state = leds;
 }
 
-void n32_usbhs_keyboard_tx_done(void) {
-    hs_prev_xfer_complete = 1;
+void n32_usbhs_shared_tx_done(void) {
+    hs_shared_prev_xfer_complete = 1;
 }
+
+#ifdef RAW_ENABLE
+void n32_usbhs_raw_tx_done(void) {
+    hs_raw_prev_xfer_complete = 1;
+}
+#endif

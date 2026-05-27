@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>N32 TFT Image Uploader</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="toolbar">
+        <div>
+          <h1>N32 TFT Image Uploader</h1>
+          <p>Upload QGF images or animations through VIA Raw HID.</p>
+        </div>
+        <button id="connectButton" type="button">Connect</button>
+      </header>
+
+      <section class="panel">
+        <div class="status-grid">
+          <div>
+            <span>Device</span>
+            <strong id="deviceStatus">Disconnected</strong>
+          </div>
+          <div>
+            <span>Capacity</span>
+            <strong id="capacityStatus">Unknown</strong>
+          </div>
+          <div>
+            <span>Image</span>
+            <strong id="imageStatus">Unknown</strong>
+          </div>
+          <div>
+            <span>Payload</span>
+            <strong id="payloadStatus">25 bytes</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <label class="file-picker">
+          <span>QGF file</span>
+          <input id="fileInput" type="file" accept=".qgf,application/octet-stream">
+        </label>
+
+        <div class="actions">
+          <button id="uploadButton" type="button" disabled>Upload</button>
+          <button id="showButton" type="button" disabled>Show Image</button>
+          <button id="clearButton" type="button" disabled>Clear Image</button>
+        </div>
+
+        <div class="progress-wrap">
+          <progress id="progress" max="100" value="0"></progress>
+          <span id="progressText">Idle</span>
+        </div>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="log-title">Log</div>
+        <pre id="log"></pre>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
