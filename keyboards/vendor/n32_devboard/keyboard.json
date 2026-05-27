@@ -2,12 +2,6 @@
     "manufacturer": "Nations",
     "keyboard_name": "N32 Devboard",
     "maintainer": "local",
-    "features": {
-        "bootmagic": false,
-        "extrakey": false,
-        "mousekey": false,
-        "nkro": false
-    },
     "usb": {
         "vid": "0x1FC9",
         "pid": "0x0487",

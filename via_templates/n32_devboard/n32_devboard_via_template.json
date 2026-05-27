@@ -1,0 +1,58 @@
+{
+  "name": "N32 Devboard",
+  "vendorId": "0xCD60",
+  "productId": "0xFE12",
+  "firmwareVersion": 2,
+  "matrix": {
+    "rows": 2,
+    "cols": 2
+  },
+  "layouts": {
+    "keymap": [
+      [
+        "0,0",
+        "0,1"
+      ],
+      [
+        "1,0",
+        "1,1"
+      ]
+    ]
+  },
+  "customKeycodes": [
+    {
+      "name": "TFT_NEXT",
+      "title": "TFT Page Next",
+      "shortName": "TFT"
+    }
+  ],
+  "menus": [
+    {
+      "label": "Keyboard",
+      "content": [
+        {
+          "label": "Performance",
+          "content": [
+            {
+              "label": "Report Rate",
+              "type": "dropdown",
+              "options": [
+                ["1000 Hz", 0],
+                ["2000 Hz", 1],
+                ["4000 Hz", 2],
+                ["8000 Hz", 3]
+              ],
+              "content": ["id_n32_report_rate", 0, 1]
+            },
+            {
+              "label": "Debounce",
+              "type": "range",
+              "options": [0, 20],
+              "content": ["id_n32_debounce", 0, 2]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

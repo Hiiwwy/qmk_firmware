@@ -8,6 +8,9 @@ static host_driver_t n32_freertos_driver = {
     .send_nkro = n32_usb_send_nkro,
     .send_mouse = n32_usb_send_mouse,
     .send_extra = n32_usb_send_extra,
+#ifdef RAW_ENABLE
+    .send_raw_hid = n32_usb_send_raw_hid,
+#endif
 };
 
 void protocol_setup(void) {}
