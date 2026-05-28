@@ -31,47 +31,15 @@ static uint8_t *n32_usbhs_string(const char *string, uint16_t *length) {
 }
 
 USBD_DEVICE_DESC USBD_desc = {
-    USBD_USER_DeviceDescriptor,
-    USBD_USER_LangIDStrDescriptor,
-    USBD_USER_ManufacturerStrDescriptor,
-    USBD_USER_ProductStrDescriptor,
-    USBD_USER_SerialStrDescriptor,
-    USBD_USER_ConfigStrDescriptor,
-    USBD_USER_InterfaceStrDescriptor,
+    USBD_USER_DeviceDescriptor, USBD_USER_LangIDStrDescriptor, USBD_USER_ManufacturerStrDescriptor, USBD_USER_ProductStrDescriptor, USBD_USER_SerialStrDescriptor, USBD_USER_ConfigStrDescriptor, USBD_USER_InterfaceStrDescriptor,
 };
 
 __ALIGN_BEGIN uint8_t USBD_DeviceDesc[USB_SIZ_DEVICE_DESC] __ALIGN_END = {
-    0x12,
-    USB_DEVICE_DESCRIPTOR_TYPE,
-    0x00,
-    0x02,
-    0x00,
-    0x00,
-    0x00,
-    USB_MAX_EP0_SIZE,
-    LOBYTE(VENDOR_ID),
-    HIBYTE(VENDOR_ID),
-    LOBYTE(PRODUCT_ID),
-    HIBYTE(PRODUCT_ID),
-    LOBYTE(DEVICE_VER),
-    HIBYTE(DEVICE_VER),
-    USBD_IDX_MFC_STR,
-    USBD_IDX_PRODUCT_STR,
-    USBD_IDX_SERIAL_STR,
-    USBD_CFG_MAX_NUM,
+    0x12, USB_DEVICE_DESCRIPTOR_TYPE, 0x00, 0x02, 0x00, 0x00, 0x00, USB_MAX_EP0_SIZE, LOBYTE(VENDOR_ID), HIBYTE(VENDOR_ID), LOBYTE(PRODUCT_ID), HIBYTE(PRODUCT_ID), LOBYTE(DEVICE_VER), HIBYTE(DEVICE_VER), USBD_IDX_MFC_STR, USBD_IDX_PRODUCT_STR, USBD_IDX_SERIAL_STR, USBD_CFG_MAX_NUM,
 };
 
 __ALIGN_BEGIN uint8_t USBD_DeviceQualifierDesc[USB_LEN_DEV_QUALIFIER_DESC] __ALIGN_END = {
-    USB_LEN_DEV_QUALIFIER_DESC,
-    USB_DESC_TYPE_DEVICE_QUALIFIER,
-    0x00,
-    0x02,
-    0x00,
-    0x00,
-    0x00,
-    0x40,
-    0x01,
-    0x00,
+    USB_LEN_DEV_QUALIFIER_DESC, USB_DESC_TYPE_DEVICE_QUALIFIER, 0x00, 0x02, 0x00, 0x00, 0x00, 0x40, 0x01, 0x00,
 };
 
 __ALIGN_BEGIN uint8_t USBD_LangIDDesc[USB_SIZ_STRING_LANGID] __ALIGN_END = {

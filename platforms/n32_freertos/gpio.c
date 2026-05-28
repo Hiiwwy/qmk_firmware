@@ -55,7 +55,7 @@ void n32_gpio_set_input(pin_t pin, bool pull_up, bool pull_down) {
     GPIO_InitType init;
     RCC_EnableAHB1PeriphClk(n32_gpio_clock(pin), ENABLE);
     GPIO_InitStruct(&init);
-    init.Pin = n32_gpio_pin_mask(pin);
+    init.Pin       = n32_gpio_pin_mask(pin);
     init.GPIO_Mode = GPIO_MODE_INPUT;
     init.GPIO_Pull = pull_up ? GPIO_PULL_UP : (pull_down ? GPIO_PULL_DOWN : GPIO_NO_PULL);
     GPIO_InitPeripheral(n32_gpio_port(pin), &init);
@@ -65,7 +65,7 @@ void n32_gpio_set_output(pin_t pin, bool open_drain) {
     GPIO_InitType init;
     RCC_EnableAHB1PeriphClk(n32_gpio_clock(pin), ENABLE);
     GPIO_InitStruct(&init);
-    init.Pin = n32_gpio_pin_mask(pin);
+    init.Pin       = n32_gpio_pin_mask(pin);
     init.GPIO_Mode = open_drain ? GPIO_MODE_OUTPUT_OD : GPIO_MODE_OUTPUT_PP;
     init.GPIO_Pull = GPIO_NO_PULL;
     GPIO_InitPeripheral(n32_gpio_port(pin), &init);

@@ -6,6 +6,10 @@
 #    define N32_QMK_TASK_DELAY_MS 1
 #endif
 
+#ifndef N32_QMK_TASK_STACK_WORDS
+#    define N32_QMK_TASK_STACK_WORDS 2048
+#endif
+
 void n32_board_early_init(void);
 void n32_board_init(void);
 void n32_usb_init(void);
@@ -38,7 +42,7 @@ int main(void) {
     platform_setup();
     n32_usb_init();
 
-    xTaskCreate(qmk_freertos_task, "qmk", 1024, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(qmk_freertos_task, "qmk", N32_QMK_TASK_STACK_WORDS, NULL, tskIDLE_PRIORITY + 2, NULL);
     vTaskStartScheduler();
 
     while (true) {
