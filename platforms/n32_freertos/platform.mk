@@ -6,6 +6,8 @@ N32_TARGET_PLATFORM := n32h47x_48x
 N32_USBHS_DRIVER := $(N32_SDK_ROOT)/firmware/$(N32_TARGET_PLATFORM)_usbhs_driver
 N32_BSP_ROOT := $(N32_SDK_ROOT)/projects/n32h47x_48x_EVAL/bsp
 FREERTOS_ROOT := $(N32_SDK_ROOT)/middlewares/FreeRTOSv202212.01/Source
+N32_EEPROM_LOGICAL_SIZE ?= 4096
+N32_EEPROM_BACKING_SIZE ?= 8192
 
 CC = $(CC_PREFIX) arm-none-eabi-gcc
 OBJCOPY = $(CC_PREFIX) arm-none-eabi-objcopy
@@ -53,11 +55,18 @@ OPT_DEFS += -DN32_QMK_TASK_DELAY_MS=0
 OPT_DEFS += -DSHARED_EP_ENABLE
 OPT_DEFS += -DKEYBOARD_SHARED_EP
 OPT_DEFS += -DMOUSE_SHARED_EP
+OPT_DEFS += -DEEPROM_WEAR_LEVELING
+OPT_DEFS += -DWEAR_LEVELING_CUSTOM
+OPT_DEFS += -DBACKING_STORE_WRITE_SIZE=8
+OPT_DEFS += -DWEAR_LEVELING_BACKING_SIZE=$(N32_EEPROM_BACKING_SIZE)
+OPT_DEFS += -DWEAR_LEVELING_LOGICAL_SIZE=$(N32_EEPROM_LOGICAL_SIZE)
 
 EXTRAINCDIRS += \
     $(N32_SDK_ROOT)/firmware/CMSIS/device/startup \
     $(PLATFORM_COMMON_DIR) \
     $(PLATFORM_COMMON_DIR)/boards/$(BOARD) \
+    $(QUANTUM_PATH)/wear_leveling \
+    $(TOP_DIR)/lib/fnv \
     $(N32_SDK_ROOT)/firmware/CMSIS/core \
     $(N32_SDK_ROOT)/firmware/CMSIS/device \
     $(N32_SDK_ROOT)/firmware/$(N32_TARGET_PLATFORM)_std_periph_driver/inc \
@@ -71,7 +80,10 @@ EXTRAINCDIRS += \
 SRC += \
     $(PLATFORM_COMMON_DIR)/gpio.c \
     $(PLATFORM_COMMON_DIR)/wait.c \
-    $(PLATFORM_COMMON_DIR)/eeprom.c \
+    $(DRIVER_PATH)/eeprom/eeprom_wear_leveling.c \
+    $(QUANTUM_PATH)/wear_leveling/wear_leveling.c \
+    $(TOP_DIR)/lib/fnv/hash_64a.c \
+    $(PLATFORM_COMMON_DIR)/wear_leveling_n32_flash.c \
     $(PLATFORM_COMMON_DIR)/freertos_hooks.c \
     $(PLATFORM_COMMON_DIR)/interrupt_handlers.c \
     $(PLATFORM_COMMON_DIR)/usb_driver.c \

@@ -54,11 +54,11 @@ bool spi_start_extended(spi_start_config_t *start_config) {
         return false;
     }
 
-    current_slave_pin    = start_config->slave_pin;
-    current_lsb_first    = start_config->lsb_first;
-    current_mode         = start_config->mode;
+    current_slave_pin     = start_config->slave_pin;
+    current_lsb_first     = start_config->lsb_first;
+    current_mode          = start_config->mode;
     current_cs_active_low = start_config->cs_active_low;
-    spi_active           = true;
+    spi_active            = true;
 
     gpio_set_pin_output(current_slave_pin);
     gpio_write_pin(current_slave_pin, current_cs_active_low);

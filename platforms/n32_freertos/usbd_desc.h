@@ -12,10 +12,10 @@
 #define USB_SIZ_STRING_LANGID 4
 #define USB_SIZ_STRING_SERIAL 0x1A
 
-extern uint8_t USBD_DeviceDesc[USB_SIZ_DEVICE_DESC];
-extern uint8_t USBD_StrDesc[USB_MAX_STR_DESC_SIZ];
-extern uint8_t USBD_DeviceQualifierDesc[USB_LEN_DEV_QUALIFIER_DESC];
-extern uint8_t USBD_LangIDDesc[USB_SIZ_STRING_LANGID];
+extern uint8_t          USBD_DeviceDesc[USB_SIZ_DEVICE_DESC];
+extern uint8_t          USBD_StrDesc[USB_MAX_STR_DESC_SIZ];
+extern uint8_t          USBD_DeviceQualifierDesc[USB_LEN_DEV_QUALIFIER_DESC];
+extern uint8_t          USBD_LangIDDesc[USB_SIZ_STRING_LANGID];
 extern USBD_DEVICE_DESC USBD_desc;
 
 uint8_t *USBD_USER_DeviceDescriptor(uint8_t speed, uint16_t *length);

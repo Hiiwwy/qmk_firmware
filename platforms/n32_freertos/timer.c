@@ -2,7 +2,7 @@
 #include "timer.h"
 
 volatile uint32_t timer_count;
-static uint32_t saved_ms;
+static uint32_t   saved_ms;
 
 void timer_init(void) {
     timer_count = 0;

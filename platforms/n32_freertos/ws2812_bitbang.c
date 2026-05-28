@@ -23,6 +23,8 @@ static inline void ws2812_wait_ns(uint32_t ns) {
 }
 
 static void ws2812_send_byte(uint8_t byte) {
+    taskENTER_CRITICAL();
+
     for (uint8_t bit = 0; bit < 8; ++bit) {
         if (byte & (0x80 >> bit)) {
             gpio_write_pin_high(WS2812_DI_PIN);
@@ -36,6 +38,8 @@ static void ws2812_send_byte(uint8_t byte) {
             ws2812_wait_ns(WS2812_T0L);
         }
     }
+
+    taskEXIT_CRITICAL();
 }
 
 ws2812_led_t ws2812_leds[WS2812_LED_COUNT];
@@ -61,8 +65,6 @@ void ws2812_set_color_all(uint8_t red, uint8_t green, uint8_t blue) {
 }
 
 void ws2812_flush(void) {
-    taskENTER_CRITICAL();
-
     for (int i = 0; i < WS2812_LED_COUNT; ++i) {
 #if (WS2812_BYTE_ORDER == WS2812_BYTE_ORDER_GRB)
         ws2812_send_byte(ws2812_leds[i].g);
@@ -85,6 +87,4 @@ void ws2812_flush(void) {
 
     gpio_write_pin_low(WS2812_DI_PIN);
     ws2812_wait_ns(WS2812_TRST_US * 1000UL);
-
-    taskEXIT_CRITICAL();
 }

@@ -17,20 +17,20 @@ static uint8_t keyboard_led_state;
 __ALIGN_BEGIN USB_CORE_MODULE USB_dev __ALIGN_END;
 
 static volatile uint8_t hs_shared_prev_xfer_complete = 1;
-static volatile uint8_t hs_raw_prev_xfer_complete = 1;
-static uint8_t hs_shared_report[HID_IN_PACKET] __attribute__((aligned(4)));
-static uint8_t hs_raw_report[RAW_IN_PACKET] __attribute__((aligned(4)));
-static uint16_t n32_usb_report_rate_hz = 8000;
-static uint32_t n32_usb_report_interval_cycles;
-static uint32_t n32_usb_last_shared_tx_cycle;
+static volatile uint8_t hs_raw_prev_xfer_complete    = 1;
+static uint8_t          hs_shared_report[HID_IN_PACKET] __attribute__((aligned(4)));
+static uint8_t          hs_raw_report[RAW_IN_PACKET] __attribute__((aligned(4)));
+static uint16_t         n32_usb_report_rate_hz = 8000;
+static uint32_t         n32_usb_report_interval_cycles;
+static uint32_t         n32_usb_last_shared_tx_cycle;
 
 static USBD_User_cb_TypeDef n32_usb_user_cb = {
-    .Init = n32_usbhs_user_init,
-    .DeviceReset = n32_usbhs_user_device_reset,
-    .DeviceConfigured = n32_usbhs_user_device_configured,
-    .DeviceSuspended = n32_usbhs_user_device_suspended,
-    .DeviceResumed = n32_usbhs_user_device_resumed,
-    .DeviceConnected = n32_usbhs_user_device_connected,
+    .Init               = n32_usbhs_user_init,
+    .DeviceReset        = n32_usbhs_user_device_reset,
+    .DeviceConfigured   = n32_usbhs_user_device_configured,
+    .DeviceSuspended    = n32_usbhs_user_device_suspended,
+    .DeviceResumed      = n32_usbhs_user_device_resumed,
+    .DeviceConnected    = n32_usbhs_user_device_connected,
     .DeviceDisconnected = n32_usbhs_user_device_disconnected,
 };
 

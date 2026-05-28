@@ -12,12 +12,12 @@ void USB_BSP_Init(void) {
 
     GPIO_InitStruct(&gpio);
 
-    gpio.Pin = GPIO_PIN_13;
+    gpio.Pin       = GPIO_PIN_13;
     gpio.GPIO_Mode = GPIO_MODE_INPUT;
     GPIO_InitPeripheral(GPIOB, &gpio);
 
-    gpio.Pin = GPIO_PIN_12;
-    gpio.GPIO_Mode = GPIO_MODE_AF_PP;
+    gpio.Pin            = GPIO_PIN_12;
+    gpio.GPIO_Mode      = GPIO_MODE_AF_PP;
     gpio.GPIO_Alternate = 14;
     GPIO_InitPeripheral(GPIOB, &gpio);
 }
@@ -34,8 +34,8 @@ void USB_BSP_EnableInterrupt(USB_CORE_MODULE *USBx) {
     NVIC_EnableIRQ(USB_HS_IRQn);
 
     EXTI_ClrITPendBit(EXTI_LINE23);
-    exti.EXTI_Line = EXTI_LINE23;
-    exti.EXTI_Mode = EXTI_Mode_Interrupt;
+    exti.EXTI_Line    = EXTI_LINE23;
+    exti.EXTI_Mode    = EXTI_Mode_Interrupt;
     exti.EXTI_Trigger = EXTI_Trigger_Rising;
     exti.EXTI_LineCmd = ENABLE;
     EXTI_InitPeripheral(&exti);

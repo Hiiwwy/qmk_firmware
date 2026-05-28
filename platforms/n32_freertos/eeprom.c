@@ -14,7 +14,7 @@
 #endif
 
 static uint8_t eeprom_shadow[N32_EEPROM_SIZE];
-static bool eeprom_dirty;
+static bool    eeprom_dirty;
 
 static void eeprom_load_shadow(void) {
     memcpy(eeprom_shadow, (const void *)N32_EEPROM_FLASH_BASE, sizeof(eeprom_shadow));
