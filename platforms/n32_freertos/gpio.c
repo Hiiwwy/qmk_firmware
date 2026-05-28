@@ -80,5 +80,12 @@ bool n32_gpio_read(pin_t pin) {
 }
 
 void n32_gpio_toggle(pin_t pin) {
-    n32_gpio_write(pin, !n32_gpio_read(pin));
+    GPIO_Module *port = n32_gpio_port(pin);
+    uint16_t     mask = n32_gpio_pin_mask(pin);
+
+    if ((port->POD & mask) != 0) {
+        port->PBC = mask;
+    } else {
+        port->PBSC = mask;
+    }
 }

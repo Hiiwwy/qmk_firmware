@@ -3,8 +3,10 @@
 
 #include "spi_master.h"
 
+#include "platform_deps.h"
 #include "wait.h"
 
+/* Board config.h should override these defaults for real hardware layouts. */
 #ifndef SPI_SCK_PIN
 #    define SPI_SCK_PIN B3
 #endif
@@ -17,13 +19,20 @@
 #    define SPI_MOSI_PIN B5
 #endif
 
-static pin_t   current_slave_pin;
-static bool    current_lsb_first;
-static uint8_t current_mode;
-static bool    current_cs_active_low = true;
-static bool    spi_active;
+static pin_t    current_slave_pin;
+static bool     current_lsb_first;
+static uint8_t  current_mode;
+static bool     current_cs_active_low = true;
+static uint16_t current_divisor;
+static bool     spi_active;
+
+static inline void spi_short_delay(void) {
+    __NOP();
+    __NOP();
+}
 
 static inline void spi_delay(uint16_t divisor) {
+    spi_short_delay();
     if (divisor > 16) {
         wait_us(1);
     }
@@ -58,6 +67,7 @@ bool spi_start_extended(spi_start_config_t *start_config) {
     current_lsb_first     = start_config->lsb_first;
     current_mode          = start_config->mode;
     current_cs_active_low = start_config->cs_active_low;
+    current_divisor       = start_config->divisor;
     spi_active            = true;
 
     gpio_set_pin_output(current_slave_pin);
@@ -83,13 +93,17 @@ spi_status_t spi_write(uint8_t data) {
 
         if (!cpha) {
             gpio_write_pin(SPI_MOSI_PIN, one);
+            spi_delay(current_divisor);
         }
 
         gpio_write_pin(SPI_SCK_PIN, !cpol);
         if (cpha) {
             gpio_write_pin(SPI_MOSI_PIN, one);
+            spi_delay(current_divisor);
         }
+        spi_delay(current_divisor);
         gpio_write_pin(SPI_SCK_PIN, cpol);
+        spi_delay(current_divisor);
     }
 
     return SPI_STATUS_SUCCESS;
@@ -106,10 +120,12 @@ spi_status_t spi_read(void) {
     for (uint8_t i = 0; i < 8; ++i) {
         uint8_t bit = current_lsb_first ? i : (7 - i);
         gpio_write_pin(SPI_SCK_PIN, !cpol);
+        spi_delay(current_divisor);
         if (gpio_read_pin(SPI_MISO_PIN)) {
             data |= (1U << bit);
         }
         gpio_write_pin(SPI_SCK_PIN, cpol);
+        spi_delay(current_divisor);
     }
 
     return data;
