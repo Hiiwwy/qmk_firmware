@@ -62,7 +62,7 @@ __ALIGN_BEGIN static uint8_t keyboard_config_desc[N32_USBHS_KEYBOARD_CFGDESC_SIZ
     0x02,
     0x01,
     0x00,
-    0xE0,
+    0xA0,
     0x32,
 
     0x09,
