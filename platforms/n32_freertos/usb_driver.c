@@ -23,6 +23,9 @@ static uint8_t          hs_raw_report[RAW_IN_PACKET] __attribute__((aligned(4)))
 static uint16_t         n32_usb_report_rate_hz = 8000;
 static uint32_t         n32_usb_report_interval_cycles;
 static uint32_t         n32_usb_last_shared_tx_cycle;
+static uint32_t         n32_usb_dropped_shared_reports;
+static uint32_t         n32_usb_report_slot_timeouts;
+static bool             n32_usb_cycle_counter_ready;
 
 static USBD_User_cb_TypeDef n32_usb_user_cb = {
     .Init               = n32_usbhs_user_init,
@@ -51,6 +54,7 @@ static void n32_usbhs_enable_cycle_counter(void) {
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    n32_usb_cycle_counter_ready = (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) != 0;
 }
 
 static void n32_usbhs_update_report_interval(void) {
@@ -60,16 +64,31 @@ static void n32_usbhs_update_report_interval(void) {
 }
 
 static void n32_usbhs_wait_report_slot(void) {
-    if (n32_usb_report_interval_cycles == 0) {
+    if (n32_usb_report_interval_cycles == 0 || !n32_usb_cycle_counter_ready || (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) == 0) {
         return;
     }
 
     uint32_t now = DWT->CYCCNT;
+    uint32_t guard = n32_usb_report_interval_cycles * 4U;
+
     while ((uint32_t)(now - n32_usb_last_shared_tx_cycle) < n32_usb_report_interval_cycles) {
         now = DWT->CYCCNT;
+        if (guard-- == 0) {
+            n32_usb_report_slot_timeouts++;
+            break;
+        }
     }
 
     n32_usb_last_shared_tx_cycle = now;
+}
+
+static bool n32_usb_shared_endpoint_ready(void) {
+    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+        n32_usb_dropped_shared_reports++;
+        return false;
+    }
+
+    return true;
 }
 
 void n32_usb_init(void) {
@@ -111,8 +130,16 @@ uint16_t n32_usb_get_report_rate_hz(void) {
     return n32_usb_report_rate_hz;
 }
 
+uint32_t n32_usb_get_dropped_shared_reports(void) {
+    return n32_usb_dropped_shared_reports;
+}
+
+uint32_t n32_usb_get_report_slot_timeouts(void) {
+    return n32_usb_report_slot_timeouts;
+}
+
 void n32_usb_send_keyboard(report_keyboard_t *report) {
-    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+    if (!n32_usb_shared_endpoint_ready()) {
         return;
     }
 
@@ -123,7 +150,7 @@ void n32_usb_send_keyboard(report_keyboard_t *report) {
 }
 
 void n32_usb_send_nkro(report_nkro_t *report) {
-    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+    if (!n32_usb_shared_endpoint_ready()) {
         return;
     }
 
@@ -134,7 +161,7 @@ void n32_usb_send_nkro(report_nkro_t *report) {
 }
 
 void n32_usb_send_mouse(report_mouse_t *report) {
-    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+    if (!n32_usb_shared_endpoint_ready()) {
         return;
     }
 
@@ -145,7 +172,7 @@ void n32_usb_send_mouse(report_mouse_t *report) {
 }
 
 void n32_usb_send_extra(report_extra_t *report) {
-    if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete) {
+    if (!n32_usb_shared_endpoint_ready()) {
         return;
     }
 

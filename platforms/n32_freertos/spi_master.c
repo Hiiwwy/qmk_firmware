@@ -116,16 +116,28 @@ spi_status_t spi_read(void) {
 
     uint8_t data = 0;
     bool    cpol = (current_mode & 0x02) != 0;
+    bool    cpha = (current_mode & 0x01) != 0;
 
     for (uint8_t i = 0; i < 8; ++i) {
         uint8_t bit = current_lsb_first ? i : (7 - i);
-        gpio_write_pin(SPI_SCK_PIN, !cpol);
-        spi_delay(current_divisor);
-        if (gpio_read_pin(SPI_MISO_PIN)) {
-            data |= (1U << bit);
+
+        if (cpha) {
+            gpio_write_pin(SPI_SCK_PIN, !cpol);
+            spi_delay(current_divisor);
+            gpio_write_pin(SPI_SCK_PIN, cpol);
+            spi_delay(current_divisor);
+            if (gpio_read_pin(SPI_MISO_PIN)) {
+                data |= (1U << bit);
+            }
+        } else {
+            gpio_write_pin(SPI_SCK_PIN, !cpol);
+            spi_delay(current_divisor);
+            if (gpio_read_pin(SPI_MISO_PIN)) {
+                data |= (1U << bit);
+            }
+            gpio_write_pin(SPI_SCK_PIN, cpol);
+            spi_delay(current_divisor);
         }
-        gpio_write_pin(SPI_SCK_PIN, cpol);
-        spi_delay(current_divisor);
     }
 
     return data;

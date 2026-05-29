@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "config.h"
-#include "n32h47x_48x_flash.h"
+#include "n32_flash_ops.h"
 #include "wear_leveling/wear_leveling_internal.h"
 
 #ifndef N32_EEPROM_FLASH_BASE
@@ -31,13 +31,17 @@ bool backing_store_init(void) {
 }
 
 bool backing_store_unlock(void) {
-    FLASH_Unlock();
+    if (!n32_flash_begin()) {
+        return false;
+    }
     backing_store_is_unlocked = true;
     return true;
 }
 
 bool backing_store_lock(void) {
-    FLASH_Lock();
+    if (backing_store_is_unlocked) {
+        n32_flash_end();
+    }
     backing_store_is_unlocked = false;
     return true;
 }
@@ -52,13 +56,13 @@ static bool backing_store_unlock_if_needed(void) {
 }
 
 bool backing_store_erase(void) {
-    FLASH_STS status = FLASH_EOP;
-    bool      locked_here;
+    bool status = true;
+    bool locked_here;
 
     locked_here = backing_store_unlock_if_needed();
     for (uint32_t offset = 0; offset < WEAR_LEVELING_BACKING_SIZE; offset += N32_FLASH_PAGE_SIZE) {
-        status = FLASH_EraseOnePage(N32_EEPROM_FLASH_BASE + offset);
-        if (status != FLASH_EOP) {
+        status = n32_flash_erase_page(N32_EEPROM_FLASH_BASE + offset);
+        if (!status) {
             break;
         }
     }
@@ -66,7 +70,7 @@ bool backing_store_erase(void) {
         backing_store_lock();
     }
 
-    return status == FLASH_EOP;
+    return status;
 }
 
 bool backing_store_read(uint32_t address, backing_store_int_t *value) {
@@ -94,9 +98,9 @@ bool backing_store_write(uint32_t address, backing_store_int_t value) {
 }
 
 bool backing_store_write_bulk(uint32_t address, backing_store_int_t *values, size_t item_count) {
-    FLASH_STS status = FLASH_EOP;
-    size_t    length = item_count * sizeof(*values);
-    bool      locked_here;
+    bool   status = true;
+    size_t length = item_count * sizeof(*values);
+    bool   locked_here;
 
     if (address + length > WEAR_LEVELING_BACKING_SIZE) {
         return false;
@@ -110,8 +114,8 @@ bool backing_store_write_bulk(uint32_t address, backing_store_int_t *values, siz
         memcpy(&data0, &values[i], sizeof(data0));
         memcpy(&data1, ((const uint8_t *)&values[i]) + sizeof(data0), sizeof(data1));
 
-        status = FLASH_ProgramdoubleWord(N32_EEPROM_FLASH_BASE + address + (i * sizeof(*values)), data0, data1);
-        if (status != FLASH_EOP) {
+        status = n32_flash_program_doubleword(N32_EEPROM_FLASH_BASE + address + (i * sizeof(*values)), data0, data1);
+        if (!status) {
             break;
         }
     }
@@ -119,5 +123,5 @@ bool backing_store_write_bulk(uint32_t address, backing_store_int_t *values, siz
         backing_store_lock();
     }
 
-    return status == FLASH_EOP;
+    return status;
 }

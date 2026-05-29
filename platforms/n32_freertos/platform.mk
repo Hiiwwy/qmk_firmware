@@ -1,6 +1,6 @@
 # N32H47x/48x + FreeRTOS private QMK platform.
 
-N32_PROJECT_ROOT ?= /f/N32
+N32_PROJECT_ROOT ?= $(TOP_DIR)/..
 N32_SDK_ROOT ?= $(N32_PROJECT_ROOT)/Nations.N32H47x_48x_Library.1.2.0
 N32_TARGET_PLATFORM := n32h47x_48x
 N32_USBHS_DRIVER := $(N32_SDK_ROOT)/firmware/$(N32_TARGET_PLATFORM)_usbhs_driver
@@ -42,7 +42,7 @@ ASFLAGS += $(MCUFLAGS)
 LDFLAGS += $(MCUFLAGS)
 LDFLAGS += -Wl,--gc-sections
 LDFLAGS += --specs=nosys.specs
-LDFLAGS += -T$(N32_SDK_ROOT)/firmware/CMSIS/device/$(N32_TARGET_PLATFORM)_flash.ld
+LDFLAGS += -T$(PLATFORM_COMMON_DIR)/ld/n32h487_qmk_flash.ld
 
 OPT_DEFS += -DN32H487
 OPT_DEFS += -DUSE_STDPERIPH_DRIVER
@@ -83,6 +83,7 @@ SRC += \
     $(DRIVER_PATH)/eeprom/eeprom_wear_leveling.c \
     $(QUANTUM_PATH)/wear_leveling/wear_leveling.c \
     $(TOP_DIR)/lib/fnv/hash_64a.c \
+    $(PLATFORM_COMMON_DIR)/n32_flash_ops.c \
     $(PLATFORM_COMMON_DIR)/wear_leveling_n32_flash.c \
     $(PLATFORM_COMMON_DIR)/freertos_hooks.c \
     $(PLATFORM_COMMON_DIR)/interrupt_handlers.c \
