@@ -8,6 +8,8 @@ void     n32_usb_task(void);
 uint8_t  n32_usb_keyboard_leds(void);
 void     n32_usb_set_report_rate_hz(uint16_t hz);
 uint16_t n32_usb_get_report_rate_hz(void);
+uint32_t n32_usb_get_dropped_shared_reports(void);
+uint32_t n32_usb_get_report_slot_timeouts(void);
 void     n32_usb_send_keyboard(report_keyboard_t *report);
 void     n32_usb_send_nkro(report_nkro_t *report);
 void     n32_usb_send_mouse(report_mouse_t *report);

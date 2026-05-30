@@ -20,6 +20,8 @@
 #    define N32_SOFT_I2C_DELAY_US 2
 #endif
 
+static bool i2c_initialized;
+
 static inline void i2c_delay(void) {
     wait_us(N32_SOFT_I2C_DELAY_US);
 }
@@ -56,13 +58,17 @@ static bool wait_scl_high(uint16_t timeout) {
     return true;
 }
 
-static void i2c_start(uint16_t timeout) {
+static bool i2c_start(uint16_t timeout) {
     sda_high();
-    wait_scl_high(timeout);
+    if (!wait_scl_high(timeout)) {
+        return false;
+    }
     i2c_delay();
     sda_low();
     i2c_delay();
     scl_low();
+
+    return true;
 }
 
 static void i2c_stop(uint16_t timeout) {
@@ -135,11 +141,51 @@ static uint8_t i2c_read_byte(bool ack, uint16_t timeout) {
 void i2c_init(void) {
     sda_high();
     scl_high();
+    i2c_initialized = true;
+}
+
+static void i2c_ensure_initialized(void) {
+    if (!i2c_initialized) {
+        i2c_init();
+    }
+}
+
+static bool i2c_recover_bus(uint16_t timeout) {
+    sda_high();
+    if (!wait_scl_high(timeout)) {
+        return false;
+    }
+
+    if (gpio_read_pin(I2C1_SDA_PIN)) {
+        return true;
+    }
+
+    for (uint8_t i = 0; i < 9 && !gpio_read_pin(I2C1_SDA_PIN); ++i) {
+        scl_low();
+        i2c_delay();
+        if (!wait_scl_high(timeout)) {
+            return false;
+        }
+        i2c_delay();
+    }
+
+    i2c_stop(timeout);
+    return gpio_read_pin(I2C1_SDA_PIN) && gpio_read_pin(I2C1_SCL_PIN);
+}
+
+static bool i2c_prepare_transfer(uint16_t timeout) {
+    i2c_ensure_initialized();
+    if (!i2c_recover_bus(timeout)) {
+        return false;
+    }
+
+    return i2c_start(timeout);
 }
 
 i2c_status_t i2c_transmit(uint8_t address, const uint8_t *data, uint16_t length, uint16_t timeout) {
-    i2c_init();
-    i2c_start(timeout);
+    if (!i2c_prepare_transfer(timeout)) {
+        return I2C_STATUS_ERROR;
+    }
 
     if (!i2c_write_byte(address & 0xFE, timeout)) {
         i2c_stop(timeout);
@@ -158,8 +204,9 @@ i2c_status_t i2c_transmit(uint8_t address, const uint8_t *data, uint16_t length,
 }
 
 i2c_status_t i2c_receive(uint8_t address, uint8_t *data, uint16_t length, uint16_t timeout) {
-    i2c_init();
-    i2c_start(timeout);
+    if (!i2c_prepare_transfer(timeout)) {
+        return I2C_STATUS_ERROR;
+    }
 
     if (!i2c_write_byte(address | 0x01, timeout)) {
         i2c_stop(timeout);
@@ -175,17 +222,44 @@ i2c_status_t i2c_receive(uint8_t address, uint8_t *data, uint16_t length, uint16
 }
 
 i2c_status_t i2c_transmit_and_receive(uint8_t address, const uint8_t *tx_data, uint16_t tx_length, uint8_t *rx_data, uint16_t rx_length, uint16_t timeout) {
-    i2c_status_t status = i2c_transmit(address, tx_data, tx_length, timeout);
-    if (status != I2C_STATUS_SUCCESS) {
-        return status;
+    if (!i2c_prepare_transfer(timeout)) {
+        return I2C_STATUS_ERROR;
     }
 
-    return i2c_receive(address, rx_data, rx_length, timeout);
+    if (!i2c_write_byte(address & 0xFE, timeout)) {
+        i2c_stop(timeout);
+        return I2C_STATUS_ERROR;
+    }
+
+    for (uint16_t i = 0; i < tx_length; ++i) {
+        if (!i2c_write_byte(tx_data[i], timeout)) {
+            i2c_stop(timeout);
+            return I2C_STATUS_ERROR;
+        }
+    }
+
+    if (!i2c_start(timeout)) {
+        i2c_stop(timeout);
+        return I2C_STATUS_ERROR;
+    }
+
+    if (!i2c_write_byte(address | 0x01, timeout)) {
+        i2c_stop(timeout);
+        return I2C_STATUS_ERROR;
+    }
+
+    for (uint16_t i = 0; i < rx_length; ++i) {
+        rx_data[i] = i2c_read_byte(i + 1 < rx_length, timeout);
+    }
+
+    i2c_stop(timeout);
+    return I2C_STATUS_SUCCESS;
 }
 
 i2c_status_t i2c_write_register(uint8_t devaddr, uint8_t regaddr, const uint8_t *data, uint16_t length, uint16_t timeout) {
-    i2c_init();
-    i2c_start(timeout);
+    if (!i2c_prepare_transfer(timeout)) {
+        return I2C_STATUS_ERROR;
+    }
 
     if (!i2c_write_byte(devaddr & 0xFE, timeout) || !i2c_write_byte(regaddr, timeout)) {
         i2c_stop(timeout);
@@ -206,8 +280,9 @@ i2c_status_t i2c_write_register(uint8_t devaddr, uint8_t regaddr, const uint8_t 
 i2c_status_t i2c_write_register16(uint8_t devaddr, uint16_t regaddr, const uint8_t *data, uint16_t length, uint16_t timeout) {
     uint8_t reg[2] = {(uint8_t)(regaddr >> 8), (uint8_t)regaddr};
 
-    i2c_init();
-    i2c_start(timeout);
+    if (!i2c_prepare_transfer(timeout)) {
+        return I2C_STATUS_ERROR;
+    }
 
     if (!i2c_write_byte(devaddr & 0xFE, timeout) || !i2c_write_byte(reg[0], timeout) || !i2c_write_byte(reg[1], timeout)) {
         i2c_stop(timeout);
@@ -235,8 +310,9 @@ i2c_status_t i2c_read_register16(uint8_t devaddr, uint16_t regaddr, uint8_t *dat
 }
 
 i2c_status_t i2c_ping_address(uint8_t address, uint16_t timeout) {
-    i2c_init();
-    i2c_start(timeout);
+    if (!i2c_prepare_transfer(timeout)) {
+        return I2C_STATUS_ERROR;
+    }
     bool ack = i2c_write_byte(address & 0xFE, timeout);
     i2c_stop(timeout);
 

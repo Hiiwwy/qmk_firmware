@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "n32h47x_48x_flash.h"
+#include "n32_flash_ops.h"
 #include "eeprom_driver.h"
 #include "eeprom.h"
 
@@ -21,11 +21,13 @@ static void eeprom_load_shadow(void) {
 }
 
 static void eeprom_flush_shadow(void) {
-    FLASH_STS status;
+    bool flash_open = n32_flash_begin();
+    bool status     = flash_open;
 
-    FLASH_Unlock();
-    status = FLASH_EraseOnePage(N32_EEPROM_FLASH_BASE);
-    if (status == FLASH_EOP) {
+    if (status) {
+        status = n32_flash_erase_page(N32_EEPROM_FLASH_BASE);
+    }
+    if (status) {
         for (size_t i = 0; i < sizeof(eeprom_shadow); i += 8) {
             uint32_t data0 = 0xFFFFFFFFU;
             uint32_t data1 = 0xFFFFFFFFU;
@@ -35,15 +37,17 @@ static void eeprom_flush_shadow(void) {
                 memcpy(&data1, &eeprom_shadow[i + sizeof(data0)], sizeof(data1));
             }
 
-            status = FLASH_ProgramdoubleWord(N32_EEPROM_FLASH_BASE + i, data0, data1);
-            if (status != FLASH_EOP) {
+            status = n32_flash_program_doubleword(N32_EEPROM_FLASH_BASE + i, data0, data1);
+            if (!status) {
                 break;
             }
         }
     }
-    FLASH_Lock();
+    if (flash_open) {
+        n32_flash_end();
+    }
 
-    if (status == FLASH_EOP) {
+    if (status) {
         eeprom_dirty = false;
     }
 }

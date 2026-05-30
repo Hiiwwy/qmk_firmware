@@ -11,8 +11,29 @@
 #    include "via.h"
 #endif
 
+#ifndef N32_USB_REPORT_RATE_DEFAULT
+#    ifdef N32_USB_SPEED_FS
+#        define N32_USB_REPORT_RATE_DEFAULT 1000
+#    else
+#        define N32_USB_REPORT_RATE_DEFAULT 8000
+#    endif
+#endif
+
 #define N32_CONFIG_MAGIC 0xA7
-#define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 3
+#if N32_USB_REPORT_RATE_DEFAULT == 1000
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 0
+#elif N32_USB_REPORT_RATE_DEFAULT == 2000
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 1
+#elif N32_USB_REPORT_RATE_DEFAULT == 4000
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 2
+#else
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 3
+#endif
+#ifdef N32_USB_SPEED_FS
+#    define N32_CONFIG_MAX_REPORT_RATE_INDEX 0
+#else
+#    define N32_CONFIG_MAX_REPORT_RATE_INDEX 3
+#endif
 #define N32_CONFIG_DEFAULT_DEBOUNCE_MS 5
 
 enum n32_via_value_id {
@@ -41,7 +62,7 @@ static uint16_t n32_report_rate_hz(void) {
     static const uint16_t rates[] = {1000, 2000, 4000, 8000};
 
     if (n32_config.report_rate_index >= sizeof(rates) / sizeof(rates[0])) {
-        return 8000;
+        return N32_USB_REPORT_RATE_DEFAULT;
     }
 
     return rates[n32_config.report_rate_index];
@@ -55,7 +76,7 @@ static void n32_runtime_config_sanitize(void) {
         n32_config.reserved          = 0;
     }
 
-    if (n32_config.report_rate_index > 3) {
+    if (n32_config.report_rate_index > N32_CONFIG_MAX_REPORT_RATE_INDEX) {
         n32_config.report_rate_index = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX;
     }
 
@@ -88,9 +109,9 @@ uint8_t n32_get_debounce_ms(void) {
 }
 
 #ifdef QUANTUM_PAINTER_ENABLE
+#    include "n32_flash_ops.h"
 #    include "qp.h"
 #    include "qp_st7789.h"
-#    include "n32h47x_48x_flash.h"
 
 #    ifdef VIA_ENABLE
 #        include "raw_hid.h"
@@ -321,11 +342,13 @@ static bool n32_tft_flush_upload_page(void) {
         return true;
     }
 
-    FLASH_STS status;
+    bool flash_open = n32_flash_begin();
+    bool status     = flash_open;
 
-    FLASH_Unlock();
-    status = FLASH_EraseOnePage(n32_tft_upload_page_base);
-    if (status == FLASH_EOP) {
+    if (status) {
+        status = n32_flash_erase_page(n32_tft_upload_page_base);
+    }
+    if (status) {
         for (uint32_t i = 0; i < N32_TFT_IMAGE_FLASH_PAGE_SIZE; i += 8) {
             uint32_t data0 = 0xFFFFFFFFU;
             uint32_t data1 = 0xFFFFFFFFU;
@@ -333,16 +356,18 @@ static bool n32_tft_flush_upload_page(void) {
             memcpy(&data0, &n32_tft_upload_page[i], sizeof(data0));
             memcpy(&data1, &n32_tft_upload_page[i + sizeof(data0)], sizeof(data1));
 
-            status = FLASH_ProgramdoubleWord(n32_tft_upload_page_base + i, data0, data1);
-            if (status != FLASH_EOP) {
+            status = n32_flash_program_doubleword(n32_tft_upload_page_base + i, data0, data1);
+            if (!status) {
                 break;
             }
         }
     }
-    FLASH_Lock();
+    if (flash_open) {
+        n32_flash_end();
+    }
 
     n32_tft_upload_page_dirty = false;
-    return status == FLASH_EOP;
+    return status;
 }
 
 static bool n32_tft_prepare_upload_page(uint32_t address) {
@@ -796,9 +821,12 @@ bool via_command_kb(uint8_t *data, uint8_t length) {
             break;
         case N32_VIA_IMAGE_CLEAR:
             n32_tft_stop_image();
-            FLASH_Unlock();
-            status = FLASH_EraseOnePage(N32_TFT_IMAGE_FLASH_BASE) == FLASH_EOP ? N32_VIA_IMAGE_STATUS_OK : N32_VIA_IMAGE_STATUS_FLASH;
-            FLASH_Lock();
+            if (n32_flash_begin()) {
+                status = n32_flash_erase_page(N32_TFT_IMAGE_FLASH_BASE) ? N32_VIA_IMAGE_STATUS_OK : N32_VIA_IMAGE_STATUS_FLASH;
+                n32_flash_end();
+            } else {
+                status = N32_VIA_IMAGE_STATUS_BUSY;
+            }
             n32_tft_page = 3;
             n32_tft_render();
             break;

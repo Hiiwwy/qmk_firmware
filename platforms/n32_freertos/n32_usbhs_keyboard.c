@@ -23,9 +23,9 @@ USBD_Class_cb_TypeDef n32_usbhs_keyboard_cb = {
     n32_usbhs_keyboard_init, n32_usbhs_keyboard_deinit, n32_usbhs_keyboard_setup, NULL, n32_usbhs_keyboard_ep0_rx_ready, n32_usbhs_keyboard_datain, n32_usbhs_keyboard_dataout, NULL, NULL, NULL, n32_usbhs_keyboard_get_config, n32_usbhs_keyboard_get_config,
 };
 
-__ALIGN_BEGIN static uint32_t hid_alt_set[2] __ALIGN_END;
-__ALIGN_BEGIN static uint32_t hid_protocol[2] __ALIGN_END;
-__ALIGN_BEGIN static uint32_t hid_idle_state[2] __ALIGN_END;
+__ALIGN_BEGIN static uint32_t hid_alt_set[N32_USBHS_INTERFACE_COUNT] __ALIGN_END;
+__ALIGN_BEGIN static uint32_t hid_protocol[N32_USBHS_INTERFACE_COUNT] __ALIGN_END;
+__ALIGN_BEGIN static uint32_t hid_idle_state[N32_USBHS_INTERFACE_COUNT] __ALIGN_END;
 __ALIGN_BEGIN static uint8_t  hid_out_report[HID_OUT_PACKET] __ALIGN_END;
 __ALIGN_BEGIN static uint8_t  ep0_out_report[HID_OUT_PACKET] __ALIGN_END;
 static uint8_t                ep0_out_interface;
@@ -59,10 +59,10 @@ __ALIGN_BEGIN static uint8_t keyboard_config_desc[N32_USBHS_KEYBOARD_CFGDESC_SIZ
     USB_CONFIGURATION_DESCRIPTOR_TYPE,
     LOBYTE(N32_USBHS_KEYBOARD_CFGDESC_SIZE),
     HIBYTE(N32_USBHS_KEYBOARD_CFGDESC_SIZE),
-    0x02,
+    N32_USBHS_INTERFACE_COUNT,
     0x01,
     0x00,
-    0xE0,
+    0xA0,
     0x32,
 
     0x09,
@@ -98,6 +98,7 @@ __ALIGN_BEGIN static uint8_t keyboard_config_desc[N32_USBHS_KEYBOARD_CFGDESC_SIZ
     HIBYTE(HID_OUT_PACKET),
     N32_USBHS_POLLING_INTERVAL,
 
+#ifdef RAW_ENABLE
     0x09,
     USB_INTERFACE_DESCRIPTOR_TYPE,
     0x01,
@@ -114,13 +115,8 @@ __ALIGN_BEGIN static uint8_t keyboard_config_desc[N32_USBHS_KEYBOARD_CFGDESC_SIZ
     0x00,
     0x01,
     N32_USBHS_KEYBOARD_REPORT_DESC,
-#ifdef RAW_ENABLE
     LOBYTE(sizeof(raw_report_desc)),
     HIBYTE(sizeof(raw_report_desc)),
-#else
-    0x00,
-    0x00,
-#endif
     0x07,
     USB_ENDPOINT_DESCRIPTOR_TYPE,
     N32_USBHS_RAW_IN_EP,
@@ -135,6 +131,7 @@ __ALIGN_BEGIN static uint8_t keyboard_config_desc[N32_USBHS_KEYBOARD_CFGDESC_SIZ
     LOBYTE(RAW_OUT_PACKET),
     HIBYTE(RAW_OUT_PACKET),
     N32_USBHS_POLLING_INTERVAL,
+#endif
 };
 
 static void n32_usbhs_handle_output_report(const uint8_t *report) {
@@ -179,7 +176,7 @@ static uint8_t n32_usbhs_keyboard_setup(void *pdev, USB_SETUP_REQ *req) {
     uint8_t  status    = USBD_OK;
     uint8_t  interface = (uint8_t)(req->wIndex & 0xFF);
 
-    if (interface >= 2) {
+    if (interface >= N32_USBHS_INTERFACE_COUNT) {
         interface = 0;
     }
 
@@ -212,18 +209,23 @@ static uint8_t n32_usbhs_keyboard_setup(void *pdev, USB_SETUP_REQ *req) {
             switch (req->bRequest) {
                 case USB_REQ_GET_DESCRIPTOR:
                     if ((req->wValue >> 8) == N32_USBHS_KEYBOARD_REPORT_DESC) {
-                        if (interface == 1) {
 #ifdef RAW_ENABLE
+                        if (interface == 1) {
                             len  = MIN(sizeof(raw_report_desc), req->wLength);
                             pbuf = (uint8_t *)raw_report_desc;
+                        } else
 #endif
-                        } else {
+                        {
                             len  = MIN(sizeof(shared_report_desc), req->wLength);
                             pbuf = (uint8_t *)shared_report_desc;
                         }
                     } else if ((req->wValue >> 8) == N32_USBHS_KEYBOARD_DESCRIPTOR_TYPE) {
+#ifdef RAW_ENABLE
                         pbuf = keyboard_config_desc + (interface == 1 ? 50 : 18);
-                        len  = MIN(N32_USBHS_KEYBOARD_DESC_SIZE, req->wLength);
+#else
+                        pbuf = keyboard_config_desc + 18;
+#endif
+                        len = MIN(N32_USBHS_KEYBOARD_DESC_SIZE, req->wLength);
                     }
 
                     if (pbuf != NULL) {
