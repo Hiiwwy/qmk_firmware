@@ -140,19 +140,7 @@ void ws2812_flush(void) {
     flush_count++;
     if (flush_count <= 16U || (flush_count % 128U) == 0U) {
 #if WS2812_LED_COUNT >= 2
-        n32_ws2812_tracef(
-            "RGB flush #%lu: led0=(%u,%u,%u) led1=(%u,%u,%u) cyc=(%lu,%lu,%lu)\n",
-            (unsigned long)flush_count,
-            ws2812_leds[0].r,
-            ws2812_leds[0].g,
-            ws2812_leds[0].b,
-            ws2812_leds[1].r,
-            ws2812_leds[1].g,
-            ws2812_leds[1].b,
-            (unsigned long)t0h,
-            (unsigned long)t1h,
-            (unsigned long)total
-        );
+        n32_ws2812_tracef("RGB flush #%lu: led0=(%u,%u,%u) led1=(%u,%u,%u) cyc=(%lu,%lu,%lu)\n", (unsigned long)flush_count, ws2812_leds[0].r, ws2812_leds[0].g, ws2812_leds[0].b, ws2812_leds[1].r, ws2812_leds[1].g, ws2812_leds[1].b, (unsigned long)t0h, (unsigned long)t1h, (unsigned long)total);
 #else
         n32_ws2812_tracef("RGB flush #%lu: led0=(%u,%u,%u) cyc=(%lu,%lu,%lu)\n", (unsigned long)flush_count, ws2812_leds[0].r, ws2812_leds[0].g, ws2812_leds[0].b, (unsigned long)t0h, (unsigned long)t1h, (unsigned long)total);
 #endif
