@@ -41,7 +41,7 @@ void USB_HS_WKUP_IRQHandler(void) {
     EXTI_ClrITPendBit(EXTI_LINE23);
 }
 
-#ifdef USB_DEDICATED_EP_ENABLED
+#    ifdef USB_DEDICATED_EP_ENABLED
 void USB_HS_EPx_OUT_IRQHandler(void) {
     USBD_EP_OUT_ISTR_Handler(&USB_dev);
 }
@@ -49,5 +49,5 @@ void USB_HS_EPx_OUT_IRQHandler(void) {
 void USB_HS_EPx_IN_IRQHandler(void) {
     USBD_EP_IN_ISTR_Handler(&USB_dev);
 }
-#endif
+#    endif
 #endif

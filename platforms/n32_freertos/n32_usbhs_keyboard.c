@@ -225,7 +225,7 @@ static uint8_t n32_usbhs_keyboard_setup(void *pdev, USB_SETUP_REQ *req) {
 #else
                         pbuf = keyboard_config_desc + 18;
 #endif
-                        len  = MIN(N32_USBHS_KEYBOARD_DESC_SIZE, req->wLength);
+                        len = MIN(N32_USBHS_KEYBOARD_DESC_SIZE, req->wLength);
                     }
 
                     if (pbuf != NULL) {

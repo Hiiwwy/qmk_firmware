@@ -49,13 +49,13 @@ static void n32_enable_qmk_debug(void) {}
 void quantum_init(void);
 void keyboard_post_init_quantum(void);
 
-#ifdef RGB_MATRIX_ENABLE
+#    ifdef RGB_MATRIX_ENABLE
 void eeconfig_debug_rgb_matrix(void);
 
 static void n32_rgb_matrix_init_traced(void) {
-#    ifdef RGB_MATRIX_KEYREACTIVE_ENABLED
+#        ifdef RGB_MATRIX_KEYREACTIVE_ENABLED
     rgb_matrix_init();
-#    else
+#        else
     N32_RTT_TRACE("N32 rgb_matrix_init: driver_init\n");
     rgb_matrix_driver.init();
     N32_RTT_TRACE("N32 rgb_matrix_init: driver_init ok\n");
@@ -79,9 +79,9 @@ static void n32_rgb_matrix_init_traced(void) {
     }
 
     N32_RTT_TRACE("N32 rgb_matrix_init: eeconfig_debug skipped\n");
-#    endif
+#        endif
 }
-#endif
+#    endif
 
 static void n32_keyboard_init_traced(void) {
     N32_RTT_TRACE("N32 keyboard_init: timer_init\n");
@@ -89,11 +89,11 @@ static void n32_keyboard_init_traced(void) {
     N32_RTT_TRACE("N32 keyboard_init: sync_timer_init\n");
     sync_timer_init();
 
-#ifdef VIA_ENABLE
+#    ifdef VIA_ENABLE
     N32_RTT_TRACE("N32 keyboard_init: via_init\n");
     via_init();
     N32_RTT_TRACE("N32 keyboard_init: via_init ok\n");
-#endif
+#    endif
 
     N32_RTT_TRACE("N32 keyboard_init: matrix_init\n");
     matrix_init();
@@ -109,16 +109,16 @@ static void n32_keyboard_init_traced(void) {
     N32_RTT_TRACE("N32 keyboard_init: led_init_ports\n");
     led_init_ports();
 
-#ifdef RGB_MATRIX_ENABLE
+#    ifdef RGB_MATRIX_ENABLE
     N32_RTT_TRACE("N32 keyboard_init: rgb_matrix_init\n");
     n32_rgb_matrix_init_traced();
     N32_RTT_TRACE("N32 keyboard_init: rgb_matrix_init ok\n");
-#endif
+#    endif
 
-#if defined(NKRO_ENABLE) && defined(FORCE_NKRO)
+#    if defined(NKRO_ENABLE) && defined(FORCE_NKRO)
     keymap_config.nkro = 1;
     eeconfig_update_keymap(&keymap_config);
-#endif
+#    endif
 
     N32_RTT_TRACE("N32 keyboard_init: keyboard_post_init_quantum\n");
     keyboard_post_init_quantum();

@@ -118,12 +118,12 @@ static uint8_t   *n32_usbfsd_get_config_descriptor(uint16_t length);
 static uint8_t   *n32_usbfsd_get_string_descriptor(uint16_t length);
 static uint8_t   *n32_usbfsd_get_shared_report_descriptor(uint16_t length);
 #ifdef N32_USBFSD_HAS_RAW_INTERFACE
-static uint8_t   *n32_usbfsd_get_raw_report_descriptor(uint16_t length);
+static uint8_t *n32_usbfsd_get_raw_report_descriptor(uint16_t length);
 #endif
-static uint8_t   *n32_usbfsd_get_hid_descriptor(uint16_t length);
-static uint8_t   *n32_usbfsd_set_report(uint16_t length);
-static uint8_t   *n32_usbfsd_get_protocol(uint16_t length);
-static uint8_t   *n32_usbfsd_get_idle(uint16_t length);
+static uint8_t *n32_usbfsd_get_hid_descriptor(uint16_t length);
+static uint8_t *n32_usbfsd_set_report(uint16_t length);
+static uint8_t *n32_usbfsd_get_protocol(uint16_t length);
+static uint8_t *n32_usbfsd_get_idle(uint16_t length);
 
 static volatile uint8_t fs_shared_prev_xfer_complete = 1;
 #ifdef RAW_ENABLE
@@ -147,30 +147,11 @@ n32_usbfsd_debug_counters_t n32_usbfsd_debug_counters;
 USB_Device Device_Table = {EP_NUM, 1};
 
 DEVICE_PROP Device_Property = {
-    n32_usbfsd_class_init,
-    n32_usbfsd_reset,
-    n32_usbfsd_status_in,
-    n32_usbfsd_status_out,
-    n32_usbfsd_data_setup,
-    n32_usbfsd_no_data_setup,
-    n32_usbfsd_get_interface_setting,
-    n32_usbfsd_get_device_descriptor,
-    n32_usbfsd_get_config_descriptor,
-    n32_usbfsd_get_string_descriptor,
-    0,
-    N32_USBFSD_EP0_SIZE,
+    n32_usbfsd_class_init, n32_usbfsd_reset, n32_usbfsd_status_in, n32_usbfsd_status_out, n32_usbfsd_data_setup, n32_usbfsd_no_data_setup, n32_usbfsd_get_interface_setting, n32_usbfsd_get_device_descriptor, n32_usbfsd_get_config_descriptor, n32_usbfsd_get_string_descriptor, 0, N32_USBFSD_EP0_SIZE,
 };
 
 USER_STANDARD_REQUESTS User_Standard_Requests = {
-    USB_ProcessNop,
-    n32_usbfsd_set_configuration,
-    USB_ProcessNop,
-    USB_ProcessNop,
-    USB_ProcessNop,
-    USB_ProcessNop,
-    USB_ProcessNop,
-    USB_ProcessNop,
-    n32_usbfsd_set_address,
+    USB_ProcessNop, n32_usbfsd_set_configuration, USB_ProcessNop, USB_ProcessNop, USB_ProcessNop, USB_ProcessNop, USB_ProcessNop, USB_ProcessNop, n32_usbfsd_set_address,
 };
 
 __IO uint32_t bDeviceState    = UNCONNECTED;
@@ -181,24 +162,273 @@ static const uint8_t n32_usbfsd_device_desc[N32_USBFSD_DEVICE_DESC_SIZE] = {
 };
 
 static const uint8_t n32_usbfsd_langid_desc[N32_USBFSD_STRING_LANGID_SIZE] = {
-    N32_USBFSD_STRING_LANGID_SIZE, USB_STRING_DESCRIPTOR_TYPE, 0x09, 0x04,
+    N32_USBFSD_STRING_LANGID_SIZE,
+    USB_STRING_DESCRIPTOR_TYPE,
+    0x09,
+    0x04,
 };
 
 static uint8_t n32_usbfsd_serial_desc[N32_USBFSD_STRING_SERIAL_SIZE];
 
 #ifdef N32_USBFS_MINIMAL_KEYBOARD
 static const uint8_t shared_report_desc[] = {
-    0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01, 0x95, 0x08, 0x75, 0x01, 0x81, 0x02,
-    0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
-    0x15, 0x00, 0x25, 0x01, 0x95, 0x05, 0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03, 0xC0,
+    0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01, 0x95, 0x08, 0x75, 0x01, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00, 0x15, 0x00, 0x25, 0x01, 0x95, 0x05, 0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03, 0xC0,
 };
 #else
 static const uint8_t shared_report_desc[] = {
-    0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, REPORT_ID_KEYBOARD, 0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x01, 0x05, 0x07, 0x19, 0x00, 0x2A, 0xFF, 0x00, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x95, 0x06, 0x75, 0x08, 0x81, 0x00, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x15, 0x00, 0x25, 0x01, 0x95, 0x05, 0x75, 0x01, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x01, 0xC0,
-    0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, REPORT_ID_MOUSE, 0x09, 0x01, 0xA1, 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x08, 0x15, 0x00, 0x25, 0x01, 0x95, 0x08, 0x75, 0x01, 0x81, 0x02, 0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x81, 0x25, 0x7F, 0x95, 0x02, 0x75, 0x08, 0x81, 0x06, 0x09, 0x38, 0x15, 0x81, 0x25, 0x7F, 0x95, 0x01, 0x75, 0x08, 0x81, 0x06, 0x05, 0x0C, 0x0A, 0x38, 0x02, 0x15, 0x81, 0x25, 0x7F, 0x95, 0x01, 0x75, 0x08, 0x81, 0x06, 0xC0, 0xC0,
-    0x05, 0x01, 0x09, 0x80, 0xA1, 0x01, 0x85, REPORT_ID_SYSTEM, 0x19, 0x01, 0x2A, 0xB7, 0x00, 0x15, 0x01, 0x26, 0xB7, 0x00, 0x95, 0x01, 0x75, 0x10, 0x81, 0x00, 0xC0,
-    0x05, 0x0C, 0x09, 0x01, 0xA1, 0x01, 0x85, REPORT_ID_CONSUMER, 0x19, 0x01, 0x2A, 0xA0, 0x02, 0x15, 0x01, 0x26, 0xA0, 0x02, 0x95, 0x01, 0x75, 0x10, 0x81, 0x00, 0xC0,
-    0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, REPORT_ID_NKRO, 0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01, 0x95, 0x08, 0x75, 0x01, 0x81, 0x02, 0x05, 0x07, 0x19, 0x00, 0x29, 0xEF, 0x15, 0x00, 0x25, 0x01, 0x95, 0xF0, 0x75, 0x01, 0x81, 0x02, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x95, 0x05, 0x75, 0x01, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x01, 0xC0,
+    0x05,
+    0x01,
+    0x09,
+    0x06,
+    0xA1,
+    0x01,
+    0x85,
+    REPORT_ID_KEYBOARD,
+    0x05,
+    0x07,
+    0x19,
+    0xE0,
+    0x29,
+    0xE7,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x75,
+    0x01,
+    0x95,
+    0x08,
+    0x81,
+    0x02,
+    0x95,
+    0x01,
+    0x75,
+    0x08,
+    0x81,
+    0x01,
+    0x05,
+    0x07,
+    0x19,
+    0x00,
+    0x2A,
+    0xFF,
+    0x00,
+    0x15,
+    0x00,
+    0x26,
+    0xFF,
+    0x00,
+    0x95,
+    0x06,
+    0x75,
+    0x08,
+    0x81,
+    0x00,
+    0x05,
+    0x08,
+    0x19,
+    0x01,
+    0x29,
+    0x05,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x95,
+    0x05,
+    0x75,
+    0x01,
+    0x91,
+    0x02,
+    0x95,
+    0x01,
+    0x75,
+    0x03,
+    0x91,
+    0x01,
+    0xC0,
+    0x05,
+    0x01,
+    0x09,
+    0x02,
+    0xA1,
+    0x01,
+    0x85,
+    REPORT_ID_MOUSE,
+    0x09,
+    0x01,
+    0xA1,
+    0x00,
+    0x05,
+    0x09,
+    0x19,
+    0x01,
+    0x29,
+    0x08,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x95,
+    0x08,
+    0x75,
+    0x01,
+    0x81,
+    0x02,
+    0x05,
+    0x01,
+    0x09,
+    0x30,
+    0x09,
+    0x31,
+    0x15,
+    0x81,
+    0x25,
+    0x7F,
+    0x95,
+    0x02,
+    0x75,
+    0x08,
+    0x81,
+    0x06,
+    0x09,
+    0x38,
+    0x15,
+    0x81,
+    0x25,
+    0x7F,
+    0x95,
+    0x01,
+    0x75,
+    0x08,
+    0x81,
+    0x06,
+    0x05,
+    0x0C,
+    0x0A,
+    0x38,
+    0x02,
+    0x15,
+    0x81,
+    0x25,
+    0x7F,
+    0x95,
+    0x01,
+    0x75,
+    0x08,
+    0x81,
+    0x06,
+    0xC0,
+    0xC0,
+    0x05,
+    0x01,
+    0x09,
+    0x80,
+    0xA1,
+    0x01,
+    0x85,
+    REPORT_ID_SYSTEM,
+    0x19,
+    0x01,
+    0x2A,
+    0xB7,
+    0x00,
+    0x15,
+    0x01,
+    0x26,
+    0xB7,
+    0x00,
+    0x95,
+    0x01,
+    0x75,
+    0x10,
+    0x81,
+    0x00,
+    0xC0,
+    0x05,
+    0x0C,
+    0x09,
+    0x01,
+    0xA1,
+    0x01,
+    0x85,
+    REPORT_ID_CONSUMER,
+    0x19,
+    0x01,
+    0x2A,
+    0xA0,
+    0x02,
+    0x15,
+    0x01,
+    0x26,
+    0xA0,
+    0x02,
+    0x95,
+    0x01,
+    0x75,
+    0x10,
+    0x81,
+    0x00,
+    0xC0,
+    0x05,
+    0x01,
+    0x09,
+    0x06,
+    0xA1,
+    0x01,
+    0x85,
+    REPORT_ID_NKRO,
+    0x05,
+    0x07,
+    0x19,
+    0xE0,
+    0x29,
+    0xE7,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x95,
+    0x08,
+    0x75,
+    0x01,
+    0x81,
+    0x02,
+    0x05,
+    0x07,
+    0x19,
+    0x00,
+    0x29,
+    0xEF,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x95,
+    0xF0,
+    0x75,
+    0x01,
+    0x81,
+    0x02,
+    0x05,
+    0x08,
+    0x19,
+    0x01,
+    0x29,
+    0x05,
+    0x95,
+    0x05,
+    0x75,
+    0x01,
+    0x91,
+    0x02,
+    0x95,
+    0x01,
+    0x75,
+    0x03,
+    0x91,
+    0x01,
+    0xC0,
 };
 #endif
 
@@ -209,30 +439,94 @@ static const uint8_t raw_report_desc[] = {
 #endif
 
 static const uint8_t n32_usbfsd_config_desc[N32_USBFSD_CONFIG_DESC_SIZE] = {
-    0x09, USB_CONFIGURATION_DESCRIPTOR_TYPE, LOBYTE(N32_USBFSD_CONFIG_DESC_SIZE), HIBYTE(N32_USBFSD_CONFIG_DESC_SIZE), N32_USBFSD_INTERFACE_COUNT, 0x01, 0x00, N32_USBFSD_CONFIG_ATTRIBUTES, 0x32,
-    0x09, USB_INTERFACE_DESCRIPTOR_TYPE, 0x00, 0x00, N32_USBFSD_SHARED_ENDPOINT_COUNT, 0x03, N32_USBFSD_SHARED_INTERFACE_SUBCLASS, N32_USBFSD_SHARED_INTERFACE_PROTOCOL, 0x00,
-    0x09, N32_USBFSD_HID_DESCRIPTOR_TYPE, N32_USBFSD_HID_BCD_LO, N32_USBFSD_HID_BCD_HI, 0x00, 0x01, N32_USBFSD_REPORT_DESCRIPTOR_TYPE, LOBYTE(sizeof(shared_report_desc)), HIBYTE(sizeof(shared_report_desc)),
-    0x07, USB_ENDPOINT_DESCRIPTOR_TYPE, N32_USBFSD_SHARED_IN_EP, 0x03, LOBYTE(N32_USBFSD_SHARED_EP_SIZE), HIBYTE(N32_USBFSD_SHARED_EP_SIZE), N32_USBFSD_SHARED_POLLING_INTERVAL,
+    0x09,
+    USB_CONFIGURATION_DESCRIPTOR_TYPE,
+    LOBYTE(N32_USBFSD_CONFIG_DESC_SIZE),
+    HIBYTE(N32_USBFSD_CONFIG_DESC_SIZE),
+    N32_USBFSD_INTERFACE_COUNT,
+    0x01,
+    0x00,
+    N32_USBFSD_CONFIG_ATTRIBUTES,
+    0x32,
+    0x09,
+    USB_INTERFACE_DESCRIPTOR_TYPE,
+    0x00,
+    0x00,
+    N32_USBFSD_SHARED_ENDPOINT_COUNT,
+    0x03,
+    N32_USBFSD_SHARED_INTERFACE_SUBCLASS,
+    N32_USBFSD_SHARED_INTERFACE_PROTOCOL,
+    0x00,
+    0x09,
+    N32_USBFSD_HID_DESCRIPTOR_TYPE,
+    N32_USBFSD_HID_BCD_LO,
+    N32_USBFSD_HID_BCD_HI,
+    0x00,
+    0x01,
+    N32_USBFSD_REPORT_DESCRIPTOR_TYPE,
+    LOBYTE(sizeof(shared_report_desc)),
+    HIBYTE(sizeof(shared_report_desc)),
+    0x07,
+    USB_ENDPOINT_DESCRIPTOR_TYPE,
+    N32_USBFSD_SHARED_IN_EP,
+    0x03,
+    LOBYTE(N32_USBFSD_SHARED_EP_SIZE),
+    HIBYTE(N32_USBFSD_SHARED_EP_SIZE),
+    N32_USBFSD_SHARED_POLLING_INTERVAL,
 #ifdef N32_USBFS_MINIMAL_KEYBOARD
-    0x07, USB_ENDPOINT_DESCRIPTOR_TYPE, N32_USBFSD_SHARED_OUT_EP, 0x03, LOBYTE(N32_USBFSD_SHARED_OUT_EP_SIZE), HIBYTE(N32_USBFSD_SHARED_OUT_EP_SIZE), N32_USBFSD_SHARED_POLLING_INTERVAL,
+    0x07,
+    USB_ENDPOINT_DESCRIPTOR_TYPE,
+    N32_USBFSD_SHARED_OUT_EP,
+    0x03,
+    LOBYTE(N32_USBFSD_SHARED_OUT_EP_SIZE),
+    HIBYTE(N32_USBFSD_SHARED_OUT_EP_SIZE),
+    N32_USBFSD_SHARED_POLLING_INTERVAL,
 #endif
 #ifdef N32_USBFSD_HAS_RAW_INTERFACE
-    0x09, USB_INTERFACE_DESCRIPTOR_TYPE, 0x01, 0x00, 0x02, 0x03, 0x00, 0x00, 0x00,
-    0x09, N32_USBFSD_HID_DESCRIPTOR_TYPE, 0x11, 0x01, 0x00, 0x01, N32_USBFSD_REPORT_DESCRIPTOR_TYPE, LOBYTE(sizeof(raw_report_desc)), HIBYTE(sizeof(raw_report_desc)),
-    0x07, USB_ENDPOINT_DESCRIPTOR_TYPE, N32_USBFSD_RAW_IN_EP, 0x03, LOBYTE(N32_USBFSD_PACKET_SIZE), HIBYTE(N32_USBFSD_PACKET_SIZE), N32_USBFSD_POLLING_INTERVAL,
-    0x07, USB_ENDPOINT_DESCRIPTOR_TYPE, N32_USBFSD_RAW_OUT_EP, 0x03, LOBYTE(N32_USBFSD_PACKET_SIZE), HIBYTE(N32_USBFSD_PACKET_SIZE), N32_USBFSD_POLLING_INTERVAL,
+    0x09,
+    USB_INTERFACE_DESCRIPTOR_TYPE,
+    0x01,
+    0x00,
+    0x02,
+    0x03,
+    0x00,
+    0x00,
+    0x00,
+    0x09,
+    N32_USBFSD_HID_DESCRIPTOR_TYPE,
+    0x11,
+    0x01,
+    0x00,
+    0x01,
+    N32_USBFSD_REPORT_DESCRIPTOR_TYPE,
+    LOBYTE(sizeof(raw_report_desc)),
+    HIBYTE(sizeof(raw_report_desc)),
+    0x07,
+    USB_ENDPOINT_DESCRIPTOR_TYPE,
+    N32_USBFSD_RAW_IN_EP,
+    0x03,
+    LOBYTE(N32_USBFSD_PACKET_SIZE),
+    HIBYTE(N32_USBFSD_PACKET_SIZE),
+    N32_USBFSD_POLLING_INTERVAL,
+    0x07,
+    USB_ENDPOINT_DESCRIPTOR_TYPE,
+    N32_USBFSD_RAW_OUT_EP,
+    0x03,
+    LOBYTE(N32_USBFSD_PACKET_SIZE),
+    HIBYTE(N32_USBFSD_PACKET_SIZE),
+    N32_USBFSD_POLLING_INTERVAL,
 #endif
 };
 
-static USB_OneDescriptor device_descriptor = {(uint8_t *)n32_usbfsd_device_desc, sizeof(n32_usbfsd_device_desc)};
-static USB_OneDescriptor config_descriptor = {(uint8_t *)n32_usbfsd_config_desc, sizeof(n32_usbfsd_config_desc)};
+static USB_OneDescriptor device_descriptor        = {(uint8_t *)n32_usbfsd_device_desc, sizeof(n32_usbfsd_device_desc)};
+static USB_OneDescriptor config_descriptor        = {(uint8_t *)n32_usbfsd_config_desc, sizeof(n32_usbfsd_config_desc)};
 static USB_OneDescriptor shared_report_descriptor = {(uint8_t *)shared_report_desc, sizeof(shared_report_desc)};
 #ifdef N32_USBFSD_HAS_RAW_INTERFACE
 static USB_OneDescriptor raw_report_descriptor = {(uint8_t *)raw_report_desc, sizeof(raw_report_desc)};
 #endif
 static USB_OneDescriptor langid_descriptor = {(uint8_t *)n32_usbfsd_langid_desc, sizeof(n32_usbfsd_langid_desc)};
 static USB_OneDescriptor serial_descriptor = {n32_usbfsd_serial_desc, sizeof(n32_usbfsd_serial_desc)};
-static USB_OneDescriptor hid_descriptor = {(uint8_t *)n32_usbfsd_config_desc + N32_USBFSD_HID_DESC_OFFSET, N32_USBFSD_HID_DESC_SIZE};
+static USB_OneDescriptor hid_descriptor    = {(uint8_t *)n32_usbfsd_config_desc + N32_USBFSD_HID_DESC_OFFSET, N32_USBFSD_HID_DESC_SIZE};
 
 #if defined(CONSOLE_ENABLE) && defined(N32_TRACE_USB_SETUP)
 static void n32_usbfsd_trace_write(const char *text) {
@@ -291,7 +585,7 @@ static void n32_usbfsd_debug_record_request(uint8_t request) {
 }
 
 void n32_usbfsd_debug_snapshot(n32_usbfsd_debug_counters_t *snapshot) {
-    *snapshot = n32_usbfsd_debug_counters;
+    *snapshot                = n32_usbfsd_debug_counters;
     snapshot->cntr           = _GetCNTR();
     snapshot->istr           = _GetISTR();
     snapshot->fnr            = _GetFNR();
@@ -319,9 +613,9 @@ static uint8_t *n32_usbfsd_make_string(const char *string, uint16_t *length) {
 }
 
 static void n32_usbfsd_update_serial(void) {
-    static const char         hex[] = "0123456789ABCDEF";
-    const volatile uint32_t  *uid_addr = *(const volatile uint32_t *)N32_UID_ALT_BASE == 0xFFFFFFFFU ? (const volatile uint32_t *)UID_BASE : (const volatile uint32_t *)N32_UID_ALT_BASE;
-    uint8_t                   uid[UID_LENGTH];
+    static const char        hex[]    = "0123456789ABCDEF";
+    const volatile uint32_t *uid_addr = *(const volatile uint32_t *)N32_UID_ALT_BASE == 0xFFFFFFFFU ? (const volatile uint32_t *)UID_BASE : (const volatile uint32_t *)N32_UID_ALT_BASE;
+    uint8_t                  uid[UID_LENGTH];
 
     n32_usbfsd_serial_desc[0] = sizeof(n32_usbfsd_serial_desc);
     n32_usbfsd_serial_desc[1] = USB_STRING_DESCRIPTOR_TYPE;
@@ -476,8 +770,7 @@ static void n32_usbfsd_status_in(void) {
     }
 }
 
-static void n32_usbfsd_status_out(void) {
-}
+static void n32_usbfsd_status_out(void) {}
 
 static USB_Result n32_usbfsd_get_interface_setting(uint8_t interface, uint8_t alternate) {
     return interface < N32_USBFSD_INTERFACE_COUNT && alternate == 0 ? Success : UnSupport;
@@ -485,7 +778,7 @@ static USB_Result n32_usbfsd_get_interface_setting(uint8_t interface, uint8_t al
 
 static USB_Result n32_usbfsd_data_setup(uint8_t request) {
     uint8_t *(*copy_routine)(uint16_t) = NULL;
-    uint8_t interface = pInformation->USBwIndex0;
+    uint8_t interface                  = pInformation->USBwIndex0;
 
     n32_usbfsd_debug_record_request(request);
 
@@ -508,7 +801,7 @@ static USB_Result n32_usbfsd_data_setup(uint8_t request) {
             n32_usbfsd_trace_setup("get_hid_desc", request);
             n32_usbfsd_debug_counters.hid_desc_count++;
             hid_descriptor.Descriptor = (uint8_t *)n32_usbfsd_config_desc + (interface == 1 ? N32_USBFSD_RAW_HID_DESC_OFFSET : N32_USBFSD_HID_DESC_OFFSET);
-            copy_routine             = n32_usbfsd_get_hid_descriptor;
+            copy_routine              = n32_usbfsd_get_hid_descriptor;
         }
     } else if (Type_Recipient == (CLASS_REQUEST | INTERFACE_RECIPIENT)) {
         n32_usbfsd_trace_setup("class_data", request);
@@ -716,7 +1009,7 @@ void EP1_OUT_Callback(void) {
 }
 
 #ifdef RAW_ENABLE
-#ifdef N32_USBFSD_HAS_RAW_INTERFACE
+#    ifdef N32_USBFSD_HAS_RAW_INTERFACE
 void EP2_IN_Callback(void) {
     fs_raw_prev_xfer_complete = 1;
 }
@@ -729,7 +1022,7 @@ void EP3_OUT_Callback(void) {
     }
     SetEPRxStatus(ENDP3, EP_RX_VALID);
 }
-#endif
+#    endif
 #endif
 
 USB_Result PowerOn(void) {

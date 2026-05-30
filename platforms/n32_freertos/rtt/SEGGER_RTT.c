@@ -1,8 +1,8 @@
 /*********************************************************************
-*                    SEGGER Microcontroller GmbH                     *
-*       Solutions for real time microcontroller applications          *
-*           Minimal SEGGER RTT implementation for N32 QMK            *
-*********************************************************************/
+ *                    SEGGER Microcontroller GmbH                     *
+ *       Solutions for real time microcontroller applications          *
+ *           Minimal SEGGER RTT implementation for N32 QMK            *
+ *********************************************************************/
 
 #include "SEGGER_RTT.h"
 #include "SEGGER_RTT_Conf.h"
@@ -10,7 +10,7 @@
 
 // RTT control block placed in RAM. Keep the SEGGER symbol name visible so
 // debuggers can find it by symbol as well as by scanning for the ID string.
-SEGGER_RTT_CB _SEGGER_RTT __attribute__((used, aligned(4), section(".rtt")));
+SEGGER_RTT_CB        _SEGGER_RTT __attribute__((used, aligned(4), section(".rtt")));
 extern SEGGER_RTT_CB SEGGER_RTT __attribute__((alias("_SEGGER_RTT")));
 extern SEGGER_RTT_CB _SEGGER_RTT_CB __attribute__((alias("_SEGGER_RTT")));
 
@@ -26,12 +26,12 @@ static const char _aTerminalId[16] = "SEGGER RTT\0\0\0\0\0\0";
 static uint8_t _SEGGER_RTT_Initialized;
 
 /*********************************************************************
-*       SEGGER_RTT_Init()
-*
-*  Function description
-*    Initializes the RTT control block.
-*    Called automatically on first access if SEGGER_RTT_CB_ALIGN is set.
-*/
+ *       SEGGER_RTT_Init()
+ *
+ *  Function description
+ *    Initializes the RTT control block.
+ *    Called automatically on first access if SEGGER_RTT_CB_ALIGN is set.
+ */
 void SEGGER_RTT_Init(void) {
     if (_SEGGER_RTT_Initialized) {
         return;
@@ -63,16 +63,16 @@ void SEGGER_RTT_Init(void) {
 }
 
 /*********************************************************************
-*       SEGGER_RTT_PutChar()
-*
-*  Function description
-*    Writes a single character to an RTT up-channel.
-*/
+ *       SEGGER_RTT_PutChar()
+ *
+ *  Function description
+ *    Writes a single character to an RTT up-channel.
+ */
 int SEGGER_RTT_PutChar(unsigned BufferIndex, char c) {
     SEGGER_RTT_BUFFER_UP *pRing;
-    unsigned WrOff;
-    unsigned RdOff;
-    int      r;
+    unsigned              WrOff;
+    unsigned              RdOff;
+    int                   r;
 
     SEGGER_RTT_Init();
     SEGGER_RTT_LOCK();
@@ -85,8 +85,8 @@ int SEGGER_RTT_PutChar(unsigned BufferIndex, char c) {
         RdOff = pRing->RdOff;
         if (WrOff != RdOff) {
             pRing->pBuffer[pRing->WrOff] = c;
-            pRing->WrOff = WrOff;
-            r = 0;
+            pRing->WrOff                 = WrOff;
+            r                            = 0;
         } else {
             r = -1; // Buffer full
         }
@@ -98,26 +98,26 @@ int SEGGER_RTT_PutChar(unsigned BufferIndex, char c) {
 }
 
 /*********************************************************************
-*       SEGGER_RTT_WriteNoLock()
-*
-*  Function description
-*    Writes data to an RTT up-channel without locking.
-*    Caller must ensure exclusive access.
-*/
+ *       SEGGER_RTT_WriteNoLock()
+ *
+ *  Function description
+ *    Writes data to an RTT up-channel without locking.
+ *    Caller must ensure exclusive access.
+ */
 unsigned SEGGER_RTT_WriteNoLock(unsigned BufferIndex, const void *pData, unsigned NumBytes) {
     SEGGER_RTT_BUFFER_UP *pRing;
-    const char *pSrc;
-    unsigned WrOff;
-    unsigned RdOff;
-    unsigned NumWritten;
-    unsigned NumToCopy;
+    const char           *pSrc;
+    unsigned              WrOff;
+    unsigned              RdOff;
+    unsigned              NumWritten;
+    unsigned              NumToCopy;
 
     SEGGER_RTT_Init();
     if (BufferIndex < (unsigned)_SEGGER_RTT.MaxNumUpBuffers) {
-        pRing  = &_SEGGER_RTT.aUp[BufferIndex];
-        pSrc   = (const char *)pData;
-        WrOff  = pRing->WrOff;
-        RdOff  = pRing->RdOff;
+        pRing = &_SEGGER_RTT.aUp[BufferIndex];
+        pSrc  = (const char *)pData;
+        WrOff = pRing->WrOff;
+        RdOff = pRing->RdOff;
 
         // Phase 1: copy data from WrOff to end of buffer (or RdOff, whichever comes first)
         if (RdOff > WrOff) {
@@ -134,9 +134,9 @@ unsigned SEGGER_RTT_WriteNoLock(unsigned BufferIndex, const void *pData, unsigne
         if (NumToCopy > 0) {
             memcpy(pRing->pBuffer + WrOff, pSrc, NumToCopy);
             NumWritten = NumToCopy;
-            WrOff     += NumToCopy;
-            pSrc      += NumToCopy;
-            NumBytes  -= NumToCopy;
+            WrOff += NumToCopy;
+            pSrc += NumToCopy;
+            NumBytes -= NumToCopy;
             if (WrOff >= pRing->SizeOfBuffer) {
                 WrOff = 0;
             }
@@ -153,7 +153,7 @@ unsigned SEGGER_RTT_WriteNoLock(unsigned BufferIndex, const void *pData, unsigne
             if (NumToCopy > 0) {
                 memcpy(pRing->pBuffer + WrOff, pSrc, NumToCopy);
                 NumWritten += NumToCopy;
-                WrOff      += NumToCopy;
+                WrOff += NumToCopy;
             }
         }
 
@@ -164,22 +164,22 @@ unsigned SEGGER_RTT_WriteNoLock(unsigned BufferIndex, const void *pData, unsigne
 }
 
 /*********************************************************************
-*       SEGGER_RTT_WriteSkipNoLock()
-*
-*  Function description
-*    Writes data to an RTT up-channel without locking.
-*    Skips data that would overflow the buffer (non-blocking).
-*/
+ *       SEGGER_RTT_WriteSkipNoLock()
+ *
+ *  Function description
+ *    Writes data to an RTT up-channel without locking.
+ *    Skips data that would overflow the buffer (non-blocking).
+ */
 unsigned SEGGER_RTT_WriteSkipNoLock(unsigned BufferIndex, const void *pData, unsigned NumBytes) {
     return SEGGER_RTT_WriteNoLock(BufferIndex, pData, NumBytes);
 }
 
 /*********************************************************************
-*       SEGGER_RTT_Write()
-*
-*  Function description
-*    Writes data to an RTT up-channel with locking.
-*/
+ *       SEGGER_RTT_Write()
+ *
+ *  Function description
+ *    Writes data to an RTT up-channel with locking.
+ */
 unsigned SEGGER_RTT_Write(unsigned BufferIndex, const void *pData, unsigned NumBytes) {
     unsigned NumWritten;
     SEGGER_RTT_LOCK();
@@ -189,26 +189,26 @@ unsigned SEGGER_RTT_Write(unsigned BufferIndex, const void *pData, unsigned NumB
 }
 
 /*********************************************************************
-*       SEGGER_RTT_Read()
-*
-*  Function description
-*    Reads data from an RTT down-channel (host -> target).
-*/
+ *       SEGGER_RTT_Read()
+ *
+ *  Function description
+ *    Reads data from an RTT down-channel (host -> target).
+ */
 unsigned SEGGER_RTT_Read(unsigned BufferIndex, void *pData, unsigned BufferSize) {
     SEGGER_RTT_BUFFER_DOWN *pRing;
-    char *pDst;
-    unsigned WrOff;
-    unsigned RdOff;
-    unsigned NumRead;
-    unsigned NumToCopy;
+    char                   *pDst;
+    unsigned                WrOff;
+    unsigned                RdOff;
+    unsigned                NumRead;
+    unsigned                NumToCopy;
 
     SEGGER_RTT_Init();
     SEGGER_RTT_LOCK();
     if (BufferIndex < (unsigned)_SEGGER_RTT.MaxNumDownBuffers) {
-        pRing = &_SEGGER_RTT.aDown[BufferIndex];
-        pDst  = (char *)pData;
-        WrOff = pRing->WrOff;
-        RdOff = pRing->RdOff;
+        pRing   = &_SEGGER_RTT.aDown[BufferIndex];
+        pDst    = (char *)pData;
+        WrOff   = pRing->WrOff;
+        RdOff   = pRing->RdOff;
         NumRead = 0;
 
         while (BufferSize > 0 && RdOff != WrOff) {
@@ -221,10 +221,10 @@ unsigned SEGGER_RTT_Read(unsigned BufferIndex, void *pData, unsigned BufferSize)
                 NumToCopy = BufferSize;
             }
             memcpy(pDst, pRing->pBuffer + RdOff, NumToCopy);
-            RdOff     += NumToCopy;
-            pDst      += NumToCopy;
+            RdOff += NumToCopy;
+            pDst += NumToCopy;
             BufferSize -= NumToCopy;
-            NumRead    += NumToCopy;
+            NumRead += NumToCopy;
             if (RdOff >= pRing->SizeOfBuffer) {
                 RdOff = 0;
             }
@@ -238,11 +238,11 @@ unsigned SEGGER_RTT_Read(unsigned BufferIndex, void *pData, unsigned BufferSize)
 }
 
 /*********************************************************************
-*       SEGGER_RTT_HasData()
-*
-*  Function description
-*    Checks if data is available in a down-channel.
-*/
+ *       SEGGER_RTT_HasData()
+ *
+ *  Function description
+ *    Checks if data is available in a down-channel.
+ */
 int SEGGER_RTT_HasData(unsigned BufferIndex) {
     SEGGER_RTT_BUFFER_DOWN *pRing;
     SEGGER_RTT_Init();
@@ -254,21 +254,21 @@ int SEGGER_RTT_HasData(unsigned BufferIndex) {
 }
 
 /*********************************************************************
-*       SEGGER_RTT_HasKey()
-*
-*  Function description
-*    Checks if a key is available from the host.
-*/
+ *       SEGGER_RTT_HasKey()
+ *
+ *  Function description
+ *    Checks if a key is available from the host.
+ */
 int SEGGER_RTT_HasKey(void) {
     return SEGGER_RTT_HasData(0);
 }
 
 /*********************************************************************
-*       SEGGER_RTT_GetKey()
-*
-*  Function description
-*    Reads one character from the host.
-*/
+ *       SEGGER_RTT_GetKey()
+ *
+ *  Function description
+ *    Reads one character from the host.
+ */
 int SEGGER_RTT_GetKey(void) {
     char c;
     if (SEGGER_RTT_Read(0, &c, 1) == 1) {
