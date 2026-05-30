@@ -128,6 +128,7 @@ extern __IO uint32_t bDeviceState;
 #endif
 
 void n32_usb_task(void) {
+#ifdef N32_TRACE_USB_RUNTIME
     static uint32_t last_log_tick;
     static uint32_t prev_usb_state = 0xFFFFFFFF;
 #ifdef N32_USB_SPEED_FS
@@ -156,6 +157,7 @@ void n32_usb_task(void) {
         }
 #endif
     }
+#endif
 }
 
 #ifdef RAW_ENABLE

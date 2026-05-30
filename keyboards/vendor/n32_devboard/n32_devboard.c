@@ -4,11 +4,19 @@
 #include "quantum.h"
 #include "usb_driver.h"
 
+#ifdef RGB_MATRIX_ENABLE
+#    include "rgb_matrix_drivers.h"
+#endif
+
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
 #ifdef VIA_ENABLE
 #    include "via.h"
+#endif
+#if defined(CONSOLE_ENABLE) && defined(N32_TRACE_RGB)
+#    include "SEGGER_RTT.h"
 #endif
 
 #ifndef N32_USB_REPORT_RATE_DEFAULT
@@ -39,6 +47,13 @@
 enum n32_via_value_id {
     id_n32_report_rate = 1,
     id_n32_debounce    = 2,
+    id_n32_rgb_enable  = 3,
+    id_n32_rgb_mode    = 4,
+    id_n32_rgb_hue     = 5,
+    id_n32_rgb_sat     = 6,
+    id_n32_rgb_val     = 7,
+    id_n32_rgb_speed   = 8,
+    id_n32_rgb_zone    = 9,
 };
 
 typedef struct {
@@ -57,6 +72,29 @@ static n32_runtime_config_t n32_config = {
 
 static uint16_t n32_last_keycode;
 static uint32_t n32_keypress_count;
+#ifdef RGB_MATRIX_ENABLE
+static bool     n32_rgb_save_pending;
+static uint32_t n32_rgb_save_timer;
+#endif
+
+#if defined(CONSOLE_ENABLE) && defined(N32_TRACE_RGB)
+static void n32_rgb_tracef(const char *format, ...) {
+    char    buffer[160];
+    va_list args;
+
+    va_start(args, format);
+    int length = vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    if (length > 0) {
+        SEGGER_RTT_Write(0, buffer, length < (int)sizeof(buffer) ? (unsigned)length : sizeof(buffer) - 1U);
+    }
+}
+#else
+static void n32_rgb_tracef(const char *format, ...) {
+    (void)format;
+}
+#endif
 
 static uint16_t n32_report_rate_hz(void) {
     static const uint16_t rates[] = {1000, 2000, 4000, 8000};
@@ -67,6 +105,59 @@ static uint16_t n32_report_rate_hz(void) {
 
     return rates[n32_config.report_rate_index];
 }
+
+#ifdef RGB_MATRIX_ENABLE
+static uint8_t n32_via_rgb_mode_to_qmk(uint8_t mode) {
+    switch (mode) {
+        case 2:
+            return RGB_MATRIX_BREATHING;
+        case 3:
+            return RGB_MATRIX_CYCLE_ALL;
+        case 4:
+            return RGB_MATRIX_CYCLE_LEFT_RIGHT;
+        case 5:
+            return RGB_MATRIX_HUE_BREATHING;
+        case 6:
+            return RGB_MATRIX_RAINBOW_MOVING_CHEVRON;
+        case 7:
+            return RGB_MATRIX_SOLID_REACTIVE_SIMPLE;
+        case 1:
+        default:
+            return RGB_MATRIX_SOLID_COLOR;
+    }
+}
+
+static uint8_t n32_qmk_rgb_mode_to_via(uint8_t mode) {
+    switch (mode) {
+        case RGB_MATRIX_BREATHING:
+            return 2;
+        case RGB_MATRIX_CYCLE_ALL:
+            return 3;
+        case RGB_MATRIX_CYCLE_LEFT_RIGHT:
+            return 4;
+        case RGB_MATRIX_HUE_BREATHING:
+            return 5;
+        case RGB_MATRIX_RAINBOW_MOVING_CHEVRON:
+            return 6;
+        case RGB_MATRIX_SOLID_REACTIVE_SIMPLE:
+            return 7;
+        case RGB_MATRIX_SOLID_COLOR:
+        default:
+            return 1;
+    }
+}
+
+static void n32_rgb_mark_save_pending(void) {
+    n32_rgb_save_pending = true;
+    n32_rgb_save_timer   = timer_read32();
+}
+
+static void n32_rgb_turn_off_now(void) {
+    rgb_matrix_disable_noeeprom();
+    rgb_matrix_set_color_all(0, 0, 0);
+    rgb_matrix_driver.flush();
+}
+#endif
 
 static void n32_runtime_config_sanitize(void) {
     if (n32_config.magic != N32_CONFIG_MAGIC) {
@@ -619,21 +710,14 @@ static void n32_tft_next_page(void) {
 led_config_t g_led_config = {
     {
         {0, 1},
-        {2, 3},
+        {NO_LED, NO_LED},
     },
     {
-        {0, 0}, {224, 0}, {0, 64}, {224, 64},
-        {0, 32}, {74, 32}, {149, 32}, {224, 32},
+        {0, 0}, {224, 0},
     },
     {
-        12,
-        12,
-        12,
-        4,
-        2,
-        2,
-        2,
-        2,
+        LED_FLAG_KEYLIGHT,
+        LED_FLAG_INDICATOR,
     },
 };
 #endif
@@ -684,6 +768,20 @@ void keyboard_post_init_kb(void) {
     n32_runtime_config_load();
     keyboard_post_init_user();
 
+#ifdef RGB_MATRIX_ENABLE
+    n32_rgb_tracef(
+        "RGB config: enabled=%u mode=%u hsv=(%u,%u,%u) speed=%u flags=0x%02x count=%u caps_only=1\n",
+        rgb_matrix_is_enabled(),
+        rgb_matrix_get_mode(),
+        rgb_matrix_get_hue(),
+        rgb_matrix_get_sat(),
+        rgb_matrix_get_val(),
+        rgb_matrix_get_speed(),
+        rgb_matrix_get_flags(),
+        (unsigned)RGB_MATRIX_LED_COUNT
+    );
+#endif
+
 #ifdef QUANTUM_PAINTER_ENABLE
     gpio_set_pin_output(N32_TFT_BL_PIN);
     gpio_write_pin_high(N32_TFT_BL_PIN);
@@ -714,6 +812,14 @@ void housekeeping_task_kb(void) {
         n32_tft_render();
     }
 #endif
+
+#ifdef RGB_MATRIX_ENABLE
+    if (n32_rgb_save_pending && timer_elapsed32(n32_rgb_save_timer) > 1500) {
+        n32_rgb_save_pending = false;
+        eeconfig_force_flush_rgb_matrix();
+        n32_rgb_tracef("RGB config saved\n");
+    }
+#endif
 }
 
 #ifdef VIA_ENABLE
@@ -731,6 +837,59 @@ static void n32_via_set_value(uint8_t *data) {
             n32_config.debounce_ms = value_data[0];
             n32_runtime_config_sanitize();
             break;
+#ifdef RGB_MATRIX_ENABLE
+        case id_n32_rgb_enable:
+            if (value_data[0]) {
+                rgb_matrix_enable_noeeprom();
+            } else {
+                n32_rgb_turn_off_now();
+            }
+            n32_rgb_mark_save_pending();
+            break;
+        case id_n32_rgb_mode: {
+            if (value_data[0] == 0) {
+                n32_rgb_turn_off_now();
+            } else {
+                rgb_matrix_enable_noeeprom();
+                rgb_matrix_mode_noeeprom(n32_via_rgb_mode_to_qmk(value_data[0]));
+            }
+            n32_rgb_mark_save_pending();
+            break;
+        }
+        case id_n32_rgb_hue:
+            rgb_matrix_sethsv_noeeprom(value_data[0], rgb_matrix_get_sat(), rgb_matrix_get_val());
+            n32_rgb_mark_save_pending();
+            break;
+        case id_n32_rgb_sat:
+            rgb_matrix_sethsv_noeeprom(rgb_matrix_get_hue(), value_data[0], rgb_matrix_get_val());
+            n32_rgb_mark_save_pending();
+            break;
+        case id_n32_rgb_val:
+            rgb_matrix_sethsv_noeeprom(rgb_matrix_get_hue(), rgb_matrix_get_sat(), value_data[0] > RGB_MATRIX_MAXIMUM_BRIGHTNESS ? RGB_MATRIX_MAXIMUM_BRIGHTNESS : value_data[0]);
+            n32_rgb_mark_save_pending();
+            break;
+        case id_n32_rgb_speed:
+            rgb_matrix_set_speed_noeeprom(value_data[0]);
+            n32_rgb_mark_save_pending();
+            break;
+        case id_n32_rgb_zone:
+            switch (value_data[0]) {
+                case 0:
+                    rgb_matrix_set_flags_noeeprom(LED_FLAG_ALL);
+                    break;
+                case 1:
+                    rgb_matrix_set_flags_noeeprom(LED_FLAG_KEYLIGHT);
+                    break;
+                case 2:
+                    rgb_matrix_set_flags_noeeprom(LED_FLAG_INDICATOR);
+                    break;
+                default:
+                    rgb_matrix_set_flags_noeeprom(LED_FLAG_ALL);
+                    break;
+            }
+            n32_rgb_mark_save_pending();
+            break;
+#endif
     }
 }
 
@@ -745,6 +904,39 @@ static void n32_via_get_value(uint8_t *data) {
         case id_n32_debounce:
             value_data[0] = n32_config.debounce_ms;
             break;
+#ifdef RGB_MATRIX_ENABLE
+        case id_n32_rgb_enable:
+            value_data[0] = rgb_matrix_is_enabled();
+            break;
+        case id_n32_rgb_mode:
+            value_data[0] = rgb_matrix_is_enabled() ? n32_qmk_rgb_mode_to_via(rgb_matrix_get_mode()) : 0;
+            break;
+        case id_n32_rgb_hue:
+            value_data[0] = rgb_matrix_get_hue();
+            break;
+        case id_n32_rgb_sat:
+            value_data[0] = rgb_matrix_get_sat();
+            break;
+        case id_n32_rgb_val:
+            value_data[0] = rgb_matrix_get_val();
+            break;
+        case id_n32_rgb_speed:
+            value_data[0] = rgb_matrix_get_speed();
+            break;
+        case id_n32_rgb_zone:
+            switch (rgb_matrix_get_flags()) {
+                case LED_FLAG_KEYLIGHT:
+                    value_data[0] = 1;
+                    break;
+                case LED_FLAG_INDICATOR:
+                    value_data[0] = 2;
+                    break;
+                default:
+                    value_data[0] = 0;
+                    break;
+            }
+            break;
+#endif
     }
 }
 
@@ -849,16 +1041,16 @@ bool rgb_matrix_indicators_kb(void) {
         return false;
     }
 
-    led_t led_state = host_keyboard_led_state();
+    static uint8_t last_caps = 0xFF;
+    led_t          led_state = host_keyboard_led_state();
 
-    if (led_state.num_lock) {
-        rgb_matrix_set_color(0, 0, 120, 255);
+    if (last_caps != led_state.caps_lock) {
+        last_caps = led_state.caps_lock;
+        n32_rgb_tracef("RGB indicator: caps=%u led1=%s\n", led_state.caps_lock, led_state.caps_lock ? "white" : "effect");
     }
+
     if (led_state.caps_lock) {
         rgb_matrix_set_color(1, 255, 255, 255);
-    }
-    if (led_state.scroll_lock) {
-        rgb_matrix_set_color(2, 255, 120, 0);
     }
 
     return true;

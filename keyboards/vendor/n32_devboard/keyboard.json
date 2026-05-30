@@ -1,6 +1,6 @@
 {
-    "manufacturer": "Nations",
-    "keyboard_name": "N32 Devboard",
+    "manufacturer": "Magic XKBD Studio",
+    "keyboard_name": "N32H487 QMK Keyboard",
     "maintainer": "local",
     "usb": {
         "vid": "0x1FC9",

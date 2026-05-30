@@ -59,6 +59,8 @@
 #define N32_USBFSD_RAW_HID_DESC_OFFSET 43U
 #define N32_USBFSD_HID_DESCRIPTOR_TYPE 0x21U
 #define N32_USBFSD_REPORT_DESCRIPTOR_TYPE 0x22U
+#define N32_USBFSD_SHARED_INTERFACE_STRING 4U
+#define N32_USBFSD_RAW_INTERFACE_STRING 5U
 #ifdef N32_USBFS_MINIMAL_KEYBOARD
 #    define N32_USBFSD_SHARED_EP_SIZE 8U
 #    define N32_USBFSD_SHARED_OUT_EP_SIZE 2U
@@ -456,7 +458,7 @@ static const uint8_t n32_usbfsd_config_desc[N32_USBFSD_CONFIG_DESC_SIZE] = {
     0x03,
     N32_USBFSD_SHARED_INTERFACE_SUBCLASS,
     N32_USBFSD_SHARED_INTERFACE_PROTOCOL,
-    0x00,
+    N32_USBFSD_SHARED_INTERFACE_STRING,
     0x09,
     N32_USBFSD_HID_DESCRIPTOR_TYPE,
     N32_USBFSD_HID_BCD_LO,
@@ -491,7 +493,7 @@ static const uint8_t n32_usbfsd_config_desc[N32_USBFSD_CONFIG_DESC_SIZE] = {
     0x03,
     0x00,
     0x00,
-    0x00,
+    N32_USBFSD_RAW_INTERFACE_STRING,
     0x09,
     N32_USBFSD_HID_DESCRIPTOR_TYPE,
     0x11,
@@ -905,6 +907,18 @@ static uint8_t *n32_usbfsd_get_string_descriptor(uint16_t length) {
     }
     if (index == 3) {
         return Standard_GetDescriptorData(length, &serial_descriptor);
+    }
+    if (index == N32_USBFSD_SHARED_INTERFACE_STRING) {
+        uint16_t string_length;
+        n32_usbfsd_make_string("N32H487 Shared HID", &string_length);
+        USB_OneDescriptor descriptor = {fs_string_desc, string_length};
+        return Standard_GetDescriptorData(length, &descriptor);
+    }
+    if (index == N32_USBFSD_RAW_INTERFACE_STRING) {
+        uint16_t string_length;
+        n32_usbfsd_make_string("N32H487 VIA Raw HID", &string_length);
+        USB_OneDescriptor descriptor = {fs_string_desc, string_length};
+        return Standard_GetDescriptorData(length, &descriptor);
     }
 
     return NULL;

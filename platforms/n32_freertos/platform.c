@@ -42,7 +42,11 @@ static void n32_enable_qmk_debug(void) {
     N32_RTT_TRACE("N32 QMK debug flags enabled\n");
 }
 #else
-static void n32_enable_qmk_debug(void) {}
+static void n32_enable_qmk_debug(void) {
+#    ifdef CONSOLE_ENABLE
+    debug_config.raw = 0;
+#    endif
+}
 #endif
 
 #ifdef N32_TRACE_KEYBOARD_INIT
