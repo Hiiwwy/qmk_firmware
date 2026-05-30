@@ -129,6 +129,13 @@ SECTIONS
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
 
+  .rtt (NOLOAD) :
+  {
+    . = ALIGN(4);
+    KEEP(*(.rtt))
+    . = ALIGN(4);
+  } >RAM
+
   /* Initialized data sections goes into RAM, load LMA copy after code */
   .data : 
   {

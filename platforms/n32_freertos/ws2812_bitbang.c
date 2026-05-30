@@ -5,6 +5,9 @@
 
 #include "gpio.h"
 #include "platform_deps.h"
+#ifdef CONSOLE_ENABLE
+#    include "SEGGER_RTT.h"
+#endif
 
 #ifndef WS2812_DI_PIN
 #    define WS2812_DI_PIN B7
@@ -15,6 +18,12 @@
 #endif
 
 #define N32_WS2812_NS_TO_LOOPS(ns) (((ns) * N32_WS2812_NOP_FUDGE + 99) / 100)
+
+#ifdef CONSOLE_ENABLE
+#    define N32_WS2812_TRACE(msg) SEGGER_RTT_Write(0, msg, sizeof(msg) - 1)
+#else
+#    define N32_WS2812_TRACE(msg) ((void)0)
+#endif
 
 static inline void ws2812_wait_ns(uint32_t ns) {
     for (volatile uint32_t i = 0; i < N32_WS2812_NS_TO_LOOPS(ns); ++i) {
@@ -45,8 +54,11 @@ static void ws2812_send_byte(uint8_t byte) {
 ws2812_led_t ws2812_leds[WS2812_LED_COUNT];
 
 void ws2812_init(void) {
+    N32_WS2812_TRACE("N32 ws2812_init: set output\n");
     gpio_set_pin_output_push_pull(WS2812_DI_PIN);
+    N32_WS2812_TRACE("N32 ws2812_init: output ok\n");
     gpio_write_pin_low(WS2812_DI_PIN);
+    N32_WS2812_TRACE("N32 ws2812_init ok\n");
 }
 
 void ws2812_set_color(int index, uint8_t red, uint8_t green, uint8_t blue) {

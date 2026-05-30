@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "n32_flash_ops.h"
+#include "nvm_eeconfig.h"
 #include "wear_leveling/wear_leveling_internal.h"
 
 #ifndef N32_EEPROM_FLASH_BASE
@@ -24,9 +25,12 @@
 
 static bool backing_store_is_unlocked;
 
+static void n32_eeprom_migrate_raw_format(void);
+
 bool backing_store_init(void) {
     backing_store_is_unlocked = false;
     backing_store_lock();
+    n32_eeprom_migrate_raw_format();
     return true;
 }
 
@@ -55,6 +59,27 @@ static bool backing_store_unlock_if_needed(void) {
     return true;
 }
 
+#ifdef N32_EEPROM_MIGRATE_RAW_FORMAT
+static void n32_eeprom_migrate_raw_format(void) {
+    uint16_t raw_magic;
+
+    memcpy(&raw_magic, (const void *)N32_EEPROM_FLASH_BASE, sizeof(raw_magic));
+    if (raw_magic == EECONFIG_MAGIC_NUMBER) {
+        backing_store_erase();
+    }
+}
+#else
+static void n32_eeprom_migrate_raw_format(void) {}
+#endif
+
+static backing_store_int_t n32_flash_to_wear_leveling(backing_store_int_t value) {
+    return ~value;
+}
+
+static backing_store_int_t n32_wear_leveling_to_flash(backing_store_int_t value) {
+    return ~value;
+}
+
 bool backing_store_erase(void) {
     bool status = true;
     bool locked_here;
@@ -74,11 +99,14 @@ bool backing_store_erase(void) {
 }
 
 bool backing_store_read(uint32_t address, backing_store_int_t *value) {
+    backing_store_int_t stored_value;
+
     if (address + sizeof(*value) > WEAR_LEVELING_BACKING_SIZE) {
         return false;
     }
 
-    memcpy(value, (const void *)(N32_EEPROM_FLASH_BASE + address), sizeof(*value));
+    memcpy(&stored_value, (const void *)(N32_EEPROM_FLASH_BASE + address), sizeof(stored_value));
+    *value = n32_flash_to_wear_leveling(stored_value);
     return true;
 }
 
@@ -90,6 +118,9 @@ bool backing_store_read_bulk(uint32_t address, backing_store_int_t *values, size
     }
 
     memcpy(values, (const void *)(N32_EEPROM_FLASH_BASE + address), length);
+    for (size_t i = 0; i < item_count; ++i) {
+        values[i] = n32_flash_to_wear_leveling(values[i]);
+    }
     return true;
 }
 
@@ -108,11 +139,16 @@ bool backing_store_write_bulk(uint32_t address, backing_store_int_t *values, siz
 
     locked_here = backing_store_unlock_if_needed();
     for (size_t i = 0; i < item_count; ++i) {
-        uint32_t data0 = 0xFFFFFFFFU;
-        uint32_t data1 = 0xFFFFFFFFU;
+        backing_store_int_t stored_value = n32_wear_leveling_to_flash(values[i]);
+        uint32_t            data0        = 0xFFFFFFFFU;
+        uint32_t            data1        = 0xFFFFFFFFU;
 
-        memcpy(&data0, &values[i], sizeof(data0));
-        memcpy(&data1, ((const uint8_t *)&values[i]) + sizeof(data0), sizeof(data1));
+        if (stored_value == (backing_store_int_t) ~(backing_store_int_t)0) {
+            continue;
+        }
+
+        memcpy(&data0, &stored_value, sizeof(data0));
+        memcpy(&data1, ((const uint8_t *)&stored_value) + sizeof(data0), sizeof(data1));
 
         status = n32_flash_program_doubleword(N32_EEPROM_FLASH_BASE + address + (i * sizeof(*values)), data0, data1);
         if (!status) {

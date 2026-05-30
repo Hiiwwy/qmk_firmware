@@ -11,8 +11,29 @@
 #    include "via.h"
 #endif
 
+#ifndef N32_USB_REPORT_RATE_DEFAULT
+#    ifdef N32_USB_SPEED_FS
+#        define N32_USB_REPORT_RATE_DEFAULT 1000
+#    else
+#        define N32_USB_REPORT_RATE_DEFAULT 8000
+#    endif
+#endif
+
 #define N32_CONFIG_MAGIC 0xA7
-#define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 3
+#if N32_USB_REPORT_RATE_DEFAULT == 1000
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 0
+#elif N32_USB_REPORT_RATE_DEFAULT == 2000
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 1
+#elif N32_USB_REPORT_RATE_DEFAULT == 4000
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 2
+#else
+#    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 3
+#endif
+#ifdef N32_USB_SPEED_FS
+#    define N32_CONFIG_MAX_REPORT_RATE_INDEX 0
+#else
+#    define N32_CONFIG_MAX_REPORT_RATE_INDEX 3
+#endif
 #define N32_CONFIG_DEFAULT_DEBOUNCE_MS 5
 
 enum n32_via_value_id {
@@ -41,7 +62,7 @@ static uint16_t n32_report_rate_hz(void) {
     static const uint16_t rates[] = {1000, 2000, 4000, 8000};
 
     if (n32_config.report_rate_index >= sizeof(rates) / sizeof(rates[0])) {
-        return 8000;
+        return N32_USB_REPORT_RATE_DEFAULT;
     }
 
     return rates[n32_config.report_rate_index];
@@ -55,7 +76,7 @@ static void n32_runtime_config_sanitize(void) {
         n32_config.reserved          = 0;
     }
 
-    if (n32_config.report_rate_index > 3) {
+    if (n32_config.report_rate_index > N32_CONFIG_MAX_REPORT_RATE_INDEX) {
         n32_config.report_rate_index = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX;
     }
 

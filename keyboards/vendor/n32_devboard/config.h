@@ -20,7 +20,8 @@
 #define SPI_SCK_PIN B5
 #define SPI_MISO_PIN C0
 #define SPI_MOSI_PIN B6
-#define N32_TFT_BL_PIN B4
+// Keep TFT backlight away from PB4/NJTRST so J-Link/SWD debug stays reliable.
+#define N32_TFT_BL_PIN C1
 #define N32_TFT_RST_PIN B7
 #define N32_TFT_DC_PIN B8
 #define N32_TFT_CS_PIN B9
