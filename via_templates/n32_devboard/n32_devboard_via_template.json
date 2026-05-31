@@ -1,7 +1,7 @@
 {
-  "name": "N32 Devboard",
-  "vendorId": "0xCD60",
-  "productId": "0xFE12",
+  "name": "N32H487 QMK Keyboard",
+  "vendorId": "0x1FC9",
+  "productId": "0x0487",
   "firmwareVersion": 2,
   "matrix": {
     "rows": 2,
@@ -49,6 +49,60 @@
               "type": "range",
               "options": [0, 20],
               "content": ["id_n32_debounce", 0, 2]
+            }
+          ]
+        },
+        {
+          "label": "RGB",
+          "content": [
+            {
+              "label": "Effect Mode",
+              "type": "dropdown",
+              "options": [
+                ["Off", 0],
+                ["Solid Color", 1],
+                ["Breathing", 2],
+                ["Cycle All", 3],
+                ["Cycle Left/Right", 4],
+                ["Hue Breathing", 5],
+                ["Rainbow Chevron", 6],
+                ["Reactive Simple", 7]
+              ],
+              "content": ["id_n32_rgb_mode", 0, 4]
+            },
+            {
+              "label": "Hue",
+              "type": "range",
+              "options": [0, 255],
+              "content": ["id_n32_rgb_hue", 0, 5]
+            },
+            {
+              "label": "Saturation",
+              "type": "range",
+              "options": [0, 255],
+              "content": ["id_n32_rgb_sat", 0, 6]
+            },
+            {
+              "label": "Brightness",
+              "type": "range",
+              "options": [0, 160],
+              "content": ["id_n32_rgb_val", 0, 7]
+            },
+            {
+              "label": "Speed",
+              "type": "range",
+              "options": [0, 255],
+              "content": ["id_n32_rgb_speed", 0, 8]
+            },
+            {
+              "label": "Zone",
+              "type": "dropdown",
+              "options": [
+                ["All", 0],
+                ["Keylight", 1],
+                ["Caps Indicator", 2]
+              ],
+              "content": ["id_n32_rgb_zone", 0, 9]
             }
           ]
         }

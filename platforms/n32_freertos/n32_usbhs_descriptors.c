@@ -114,10 +114,10 @@ uint8_t *USBD_USER_SerialStrDescriptor(uint8_t speed, uint16_t *length) {
 }
 
 uint8_t *USBD_USER_ConfigStrDescriptor(uint8_t speed, uint16_t *length) {
-    return n32_usbhs_string(speed == USB_SPEED_HIGH ? "QMK HS Keyboard" : "QMK FS Keyboard", length);
+    return n32_usbhs_string(speed == USB_SPEED_HIGH ? "N32H487 HS Keyboard" : "N32H487 FS Keyboard", length);
 }
 
 uint8_t *USBD_USER_InterfaceStrDescriptor(uint8_t speed, uint16_t *length) {
     (void)speed;
-    return n32_usbhs_string("QMK HID Keyboard", length);
+    return n32_usbhs_string("N32H487 HID Keyboard", length);
 }

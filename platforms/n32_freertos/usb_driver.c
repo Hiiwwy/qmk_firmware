@@ -128,34 +128,36 @@ extern __IO uint32_t bDeviceState;
 #endif
 
 void n32_usb_task(void) {
+#ifdef N32_TRACE_USB_RUNTIME
     static uint32_t last_log_tick;
     static uint32_t prev_usb_state = 0xFFFFFFFF;
-#ifdef N32_USB_SPEED_FS
+#    ifdef N32_USB_SPEED_FS
     static n32_usbfsd_debug_counters_t prev_fs_debug;
-#endif
+#    endif
     uint32_t now = timer_read32();
 
     if ((now - last_log_tick) >= 1000) {
         last_log_tick = now;
-#ifdef N32_USB_SPEED_FS
+#    ifdef N32_USB_SPEED_FS
         uint32_t                    state = bDeviceState;
         n32_usbfsd_debug_counters_t fs_debug;
-#else
+#    else
         uint32_t state = USB_dev.dev.device_status;
-#endif
+#    endif
         if (state != prev_usb_state) {
             xprintf("USB state: %lu\n", (unsigned long)state);
             prev_usb_state = state;
         }
-#ifdef N32_USB_SPEED_FS
+#    ifdef N32_USB_SPEED_FS
         n32_usbfsd_debug_snapshot(&fs_debug);
         if (memcmp(&fs_debug, &prev_fs_debug, sizeof(fs_debug)) != 0) {
             xprintf("USB fs dbg: rst=%lu susp=%lu err=%lu ctr=%lu sof=%lu esof=%lu frst=%lu addr=%lu cfg=%lu dev=%lu conf=%lu str=%lu hid=%lu rep=%lu cls=%lu nod=%lu uns=%lu last=%02X/%02X/%04X/%04X/%04X reg=%04X/%04X/%04X/%04X/%04X/%04X/%04X rcc=%08lX/%08lX/%08lX\n", (unsigned long)fs_debug.reset_count, (unsigned long)fs_debug.suspend_count, (unsigned long)fs_debug.error_count, (unsigned long)fs_debug.ctr_count, (unsigned long)fs_debug.sof_count, (unsigned long)fs_debug.esof_count, (unsigned long)fs_debug.esof_forced_reset_count, (unsigned long)fs_debug.set_address_count, (unsigned long)fs_debug.set_configuration_count, (unsigned long)fs_debug.device_desc_count, (unsigned long)fs_debug.config_desc_count, (unsigned long)fs_debug.string_desc_count, (unsigned long)fs_debug.hid_desc_count, (unsigned long)fs_debug.report_desc_count, (unsigned long)fs_debug.class_data_count, (unsigned long)fs_debug.class_nodata_count, (unsigned long)fs_debug.unsupported_count, fs_debug.last_request,
                     fs_debug.last_type, fs_debug.last_value, fs_debug.last_index, fs_debug.last_length, fs_debug.cntr, fs_debug.istr, fs_debug.fnr, fs_debug.daddr, fs_debug.ep0r, fs_debug.ep1r, fs_debug.interrupt_mask, (unsigned long)fs_debug.rcc_cfg3, (unsigned long)fs_debug.rcc_apb1pclken, (unsigned long)fs_debug.rcc_ahb1pclken);
             prev_fs_debug = fs_debug;
         }
-#endif
+#    endif
     }
+#endif
 }
 
 #ifdef RAW_ENABLE
