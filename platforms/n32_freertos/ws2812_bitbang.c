@@ -4,6 +4,7 @@
 #include "ws2812.h"
 
 #include "gpio.h"
+#include "n32_perf.h"
 #include "platform_deps.h"
 #include "wait.h"
 #if defined(CONSOLE_ENABLE) && defined(N32_TRACE_RGB)
@@ -131,11 +132,12 @@ void ws2812_set_color_all(uint8_t red, uint8_t green, uint8_t blue) {
 
 void ws2812_flush(void) {
     static uint32_t flush_count;
-    GPIO_Module    *port  = n32_ws2812_port();
-    uint32_t        mask  = 1UL << N32_PIN_INDEX(WS2812_DI_PIN);
-    uint32_t        t0h   = n32_ws2812_cycles_from_ns(WS2812_T0H);
-    uint32_t        t1h   = n32_ws2812_cycles_from_ns(WS2812_T1H);
-    uint32_t        total = n32_ws2812_cycles_from_ns(WS2812_TIMING);
+    uint32_t        perf_start = n32_perf_cycles();
+    GPIO_Module    *port       = n32_ws2812_port();
+    uint32_t        mask       = 1UL << N32_PIN_INDEX(WS2812_DI_PIN);
+    uint32_t        t0h        = n32_ws2812_cycles_from_ns(WS2812_T0H);
+    uint32_t        t1h        = n32_ws2812_cycles_from_ns(WS2812_T1H);
+    uint32_t        total      = n32_ws2812_cycles_from_ns(WS2812_TIMING);
 
     flush_count++;
     if (flush_count <= 16U || (flush_count % 128U) == 0U) {
@@ -174,4 +176,5 @@ void ws2812_flush(void) {
     }
 
     wait_us(WS2812_TRST_US);
+    n32_perf_record(N32_PERF_RGB_FLUSH, perf_start);
 }

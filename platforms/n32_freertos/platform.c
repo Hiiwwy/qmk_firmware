@@ -1,6 +1,7 @@
 #include "keyboard.h"
 #include "keycode_config.h"
 #include "matrix.h"
+#include "n32_perf.h"
 #include "host.h"
 #include "led.h"
 #include "platform_deps.h"
@@ -156,6 +157,7 @@ static void qmk_freertos_task(void *arg) {
     keyboard_setup();
     N32_RTT_TRACE("N32 keyboard_setup ok\n");
     n32_enable_qmk_debug();
+    n32_perf_init();
 
     protocol_pre_init();
 #ifdef N32_TRACE_KEYBOARD_INIT
@@ -175,18 +177,36 @@ static void qmk_freertos_task(void *arg) {
 
     bool main_loop_logged = false;
     while (true) {
+        uint32_t loop_start = n32_perf_cycles();
+        uint32_t section_start;
+
         if (!main_loop_logged) {
             N32_RTT_TRACE("N32 main loop entered\n");
             main_loop_logged = true;
         }
+        section_start = n32_perf_cycles();
         protocol_pre_task();
+        n32_perf_record(N32_PERF_PROTOCOL_PRE, section_start);
+
+        section_start = n32_perf_cycles();
         protocol_keyboard_task();
+        n32_perf_record(N32_PERF_KEYBOARD, section_start);
+
+        section_start = n32_perf_cycles();
         protocol_post_task();
+        n32_perf_record(N32_PERF_PROTOCOL_POST, section_start);
 #ifdef RAW_ENABLE
         void raw_hid_task(void);
+        section_start = n32_perf_cycles();
         raw_hid_task();
+        n32_perf_record(N32_PERF_RAW_HID, section_start);
 #endif
+        section_start = n32_perf_cycles();
         housekeeping_task();
+        n32_perf_record(N32_PERF_HOUSEKEEPING, section_start);
+
+        n32_perf_record(N32_PERF_LOOP, loop_start);
+        n32_perf_report_if_due();
 #if N32_QMK_TASK_DELAY_MS > 0
         vTaskDelay(pdMS_TO_TICKS(1));
 #else

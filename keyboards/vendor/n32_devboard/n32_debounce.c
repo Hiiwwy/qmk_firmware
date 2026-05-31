@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "debounce.h"
+#include "n32_perf.h"
 #include "timer.h"
 
 #include <string.h>
@@ -13,6 +14,7 @@ void debounce_init(void) {}
 bool debounce(matrix_row_t raw[], matrix_row_t cooked[], bool changed) {
     static fast_timer_t debouncing_time;
     static bool         debouncing;
+    uint32_t            perf_start     = n32_perf_cycles();
     bool                cooked_changed = false;
     uint8_t             debounce_ms    = n32_get_debounce_ms();
 
@@ -23,6 +25,7 @@ bool debounce(matrix_row_t raw[], matrix_row_t cooked[], bool changed) {
             cooked_changed = true;
         }
         debouncing = false;
+        n32_perf_record(N32_PERF_DEBOUNCE, perf_start);
         return cooked_changed;
     }
 
@@ -38,5 +41,6 @@ bool debounce(matrix_row_t raw[], matrix_row_t cooked[], bool changed) {
         debouncing = false;
     }
 
+    n32_perf_record(N32_PERF_DEBOUNCE, perf_start);
     return cooked_changed;
 }

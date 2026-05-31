@@ -225,11 +225,11 @@ uint8_t n32_get_debounce_ms(void) {
 #    define N32_VIA_IMAGE_STATUS_INVALID 0x05
 #    define N32_VIA_IMAGE_PAYLOAD_SIZE 25
 
-static painter_device_t n32_tft_display;
-static bool             n32_tft_ready;
-static uint8_t          n32_tft_page;
-static uint32_t         n32_tft_refresh_timer;
-static uint32_t         n32_tft_page_timer;
+static painter_device_t       n32_tft_display;
+static bool                   n32_tft_ready;
+static uint8_t                n32_tft_page;
+static uint32_t               n32_tft_refresh_timer;
+static uint32_t               n32_tft_page_timer;
 static painter_image_handle_t n32_tft_image;
 static deferred_token         n32_tft_anim_token = INVALID_DEFERRED_TOKEN;
 static bool                   n32_tft_image_loaded;
@@ -289,47 +289,88 @@ static const uint8_t *n32_tft_glyph(char ch) {
     }
 
     switch (ch) {
-        case '0': return glyph_0;
-        case '1': return glyph_1;
-        case '2': return glyph_2;
-        case '3': return glyph_3;
-        case '4': return glyph_4;
-        case '5': return glyph_5;
-        case '6': return glyph_6;
-        case '7': return glyph_7;
-        case '8': return glyph_8;
-        case '9': return glyph_9;
-        case 'A': return glyph_a;
-        case 'B': return glyph_b;
-        case 'C': return glyph_c;
-        case 'D': return glyph_d;
-        case 'E': return glyph_e;
-        case 'F': return glyph_f;
-        case 'G': return glyph_g;
-        case 'H': return glyph_h;
-        case 'I': return glyph_i;
-        case 'J': return glyph_j;
-        case 'K': return glyph_k;
-        case 'L': return glyph_l;
-        case 'M': return glyph_m;
-        case 'N': return glyph_n;
-        case 'O': return glyph_o;
-        case 'P': return glyph_p;
-        case 'Q': return glyph_q;
-        case 'R': return glyph_r;
-        case 'S': return glyph_s;
-        case 'T': return glyph_t;
-        case 'U': return glyph_u;
-        case 'V': return glyph_v;
-        case 'W': return glyph_w;
-        case 'X': return glyph_x;
-        case 'Y': return glyph_y;
-        case 'Z': return glyph_z;
-        case ':': return glyph_colon;
-        case '-': return glyph_dash;
-        case '/': return glyph_slash;
-        case ' ': return font_space;
-        default: return font_unknown;
+        case '0':
+            return glyph_0;
+        case '1':
+            return glyph_1;
+        case '2':
+            return glyph_2;
+        case '3':
+            return glyph_3;
+        case '4':
+            return glyph_4;
+        case '5':
+            return glyph_5;
+        case '6':
+            return glyph_6;
+        case '7':
+            return glyph_7;
+        case '8':
+            return glyph_8;
+        case '9':
+            return glyph_9;
+        case 'A':
+            return glyph_a;
+        case 'B':
+            return glyph_b;
+        case 'C':
+            return glyph_c;
+        case 'D':
+            return glyph_d;
+        case 'E':
+            return glyph_e;
+        case 'F':
+            return glyph_f;
+        case 'G':
+            return glyph_g;
+        case 'H':
+            return glyph_h;
+        case 'I':
+            return glyph_i;
+        case 'J':
+            return glyph_j;
+        case 'K':
+            return glyph_k;
+        case 'L':
+            return glyph_l;
+        case 'M':
+            return glyph_m;
+        case 'N':
+            return glyph_n;
+        case 'O':
+            return glyph_o;
+        case 'P':
+            return glyph_p;
+        case 'Q':
+            return glyph_q;
+        case 'R':
+            return glyph_r;
+        case 'S':
+            return glyph_s;
+        case 'T':
+            return glyph_t;
+        case 'U':
+            return glyph_u;
+        case 'V':
+            return glyph_v;
+        case 'W':
+            return glyph_w;
+        case 'X':
+            return glyph_x;
+        case 'Y':
+            return glyph_y;
+        case 'Z':
+            return glyph_z;
+        case ':':
+            return glyph_colon;
+        case '-':
+            return glyph_dash;
+        case '/':
+            return glyph_slash;
+        case ' ':
+            return font_space;
+        default:
+            return font_unknown;
     }
 }
 
@@ -513,7 +554,7 @@ static uint8_t n32_tft_upload_data(uint32_t offset, uint8_t length, const uint8_
         }
 
         n32_tft_upload_page[address - n32_tft_upload_page_base] = payload[i];
-        n32_tft_upload_page_dirty                              = true;
+        n32_tft_upload_page_dirty                               = true;
         n32_tft_upload_offset++;
     }
 
@@ -709,11 +750,13 @@ static void n32_tft_next_page(void) {
 #ifdef RGB_MATRIX_ENABLE
 led_config_t g_led_config = {
     {
-        {0, 1},
-        {NO_LED, NO_LED},
+        {0, 1, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
     },
     {
-        {0, 0}, {224, 0},
+        {0, 0},
+        {224, 0},
     },
     {
         LED_FLAG_KEYLIGHT,
@@ -769,17 +812,7 @@ void keyboard_post_init_kb(void) {
     keyboard_post_init_user();
 
 #ifdef RGB_MATRIX_ENABLE
-    n32_rgb_tracef(
-        "RGB config: enabled=%u mode=%u hsv=(%u,%u,%u) speed=%u flags=0x%02x count=%u caps_only=1\n",
-        rgb_matrix_is_enabled(),
-        rgb_matrix_get_mode(),
-        rgb_matrix_get_hue(),
-        rgb_matrix_get_sat(),
-        rgb_matrix_get_val(),
-        rgb_matrix_get_speed(),
-        rgb_matrix_get_flags(),
-        (unsigned)RGB_MATRIX_LED_COUNT
-    );
+    n32_rgb_tracef("RGB config: enabled=%u mode=%u hsv=(%u,%u,%u) speed=%u flags=0x%02x count=%u caps_only=1\n", rgb_matrix_is_enabled(), rgb_matrix_get_mode(), rgb_matrix_get_hue(), rgb_matrix_get_sat(), rgb_matrix_get_val(), rgb_matrix_get_speed(), rgb_matrix_get_flags(), (unsigned)RGB_MATRIX_LED_COUNT);
 #endif
 
 #ifdef QUANTUM_PAINTER_ENABLE
@@ -789,7 +822,7 @@ void keyboard_post_init_kb(void) {
     n32_tft_display = qp_st7789_make_spi_device(N32_TFT_WIDTH, N32_TFT_HEIGHT, N32_TFT_CS_PIN, N32_TFT_DC_PIN, N32_TFT_RST_PIN, N32_TFT_SPI_DIVISOR, N32_TFT_SPI_MODE);
     if (n32_tft_display) {
         qp_set_viewport_offsets(n32_tft_display, N32_TFT_OFFSET_X, N32_TFT_OFFSET_Y);
-        n32_tft_ready = qp_init(n32_tft_display, QP_ROTATION_180) && qp_power(n32_tft_display, true);
+        n32_tft_ready         = qp_init(n32_tft_display, QP_ROTATION_180) && qp_power(n32_tft_display, true);
         n32_tft_refresh_timer = timer_read32();
         n32_tft_page_timer    = timer_read32();
         n32_tft_render();
@@ -837,7 +870,7 @@ static void n32_via_set_value(uint8_t *data) {
             n32_config.debounce_ms = value_data[0];
             n32_runtime_config_sanitize();
             break;
-#ifdef RGB_MATRIX_ENABLE
+#    ifdef RGB_MATRIX_ENABLE
         case id_n32_rgb_enable:
             if (value_data[0]) {
                 rgb_matrix_enable_noeeprom();
@@ -889,7 +922,7 @@ static void n32_via_set_value(uint8_t *data) {
             }
             n32_rgb_mark_save_pending();
             break;
-#endif
+#    endif
     }
 }
 
@@ -904,7 +937,7 @@ static void n32_via_get_value(uint8_t *data) {
         case id_n32_debounce:
             value_data[0] = n32_config.debounce_ms;
             break;
-#ifdef RGB_MATRIX_ENABLE
+#    ifdef RGB_MATRIX_ENABLE
         case id_n32_rgb_enable:
             value_data[0] = rgb_matrix_is_enabled();
             break;
@@ -936,7 +969,7 @@ static void n32_via_get_value(uint8_t *data) {
                     break;
             }
             break;
-#endif
+#    endif
     }
 }
 
