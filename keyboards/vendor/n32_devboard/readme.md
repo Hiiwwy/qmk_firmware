@@ -18,7 +18,7 @@ qmk compile -kb vendor/n32_devboard -km default -e N32_USB_SPEED=fs
 
 The default is `fs` for boards that only expose the USBFSD peripheral and limits the report rate to 1000 Hz. `hs` selects the USBHS backend and uses an 8k report-rate default for boards wired for high-speed USB.
 
-The N32 devboard HSE is configured as 24 MHz by default through `N32_HSE_VALUE=24000000U`. Override it at build time if your board uses a different crystal:
+The N32 devboard HSE is configured as 8 MHz by default through `N32_HSE_VALUE=8000000U`. Override it at build time if your board uses a different crystal:
 
 ```sh
 qmk compile -kb vendor/n32_devboard -km default -e N32_HSE_VALUE=16000000U

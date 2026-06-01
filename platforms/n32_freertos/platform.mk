@@ -9,16 +9,18 @@ N32_BSP_ROOT := $(N32_SDK_ROOT)/projects/n32h47x_48x_EVAL/bsp
 FREERTOS_ROOT := $(N32_SDK_ROOT)/middlewares/FreeRTOSv202212.01/Source
 N32_EEPROM_LOGICAL_SIZE ?= 4096
 N32_EEPROM_BACKING_SIZE ?= 8192
-N32_HSE_VALUE ?= 24000000U
+N32_HSE_VALUE ?= 8000000U
 N32_EEPROM_MIGRATE_RAW_FORMAT ?= yes
 N32_QMK_TASK_STACK_WORDS ?= 4096
 N32_QMK_DEBUG_ALL ?= no
 N32_TRACE_EEPROM ?= no
 N32_TRACE_KEYBOARD_INIT ?= no
 N32_TRACE_MATRIX ?= no
-N32_TRACE_PERF ?= yes
+N32_TRACE_MATRIX_EVENT ?= no
+N32_TRACE_PERF ?= no
 N32_TRACE_RGB ?= no
 N32_WS2812_DRIVER ?= pwm_dma
+N32_MATRIX_DRIVER ?= gpio
 N32_TRACE_USB_SETUP ?= no
 N32_TRACE_USB_RUNTIME ?= no
 N32_MATRIX_SELECT_SETTLE_CYCLES ?= 48
@@ -165,6 +167,12 @@ else
     $(error N32_WS2812_DRIVER must be pwm_dma or bitbang)
 endif
 
+ifeq ($(strip $(N32_MATRIX_DRIVER)),dma_timer)
+ifneq ($(strip $(N32_WS2812_DRIVER)),pwm_dma)
+SRC += $(N32_SDK_ROOT)/firmware/$(N32_TARGET_PLATFORM)_std_periph_driver/src/n32h47x_48x_dma.c
+endif
+endif
+
 ifeq ($(N32_USB_SPEED),hs)
 SRC += \
     $(PLATFORM_COMMON_DIR)/n32_usbhs_bsp.c \
@@ -212,6 +220,9 @@ OPT_DEFS += -DN32_TRACE_USB_RUNTIME
 endif
 ifeq ($(strip $(N32_TRACE_MATRIX)), yes)
 OPT_DEFS += -DN32_TRACE_MATRIX
+endif
+ifeq ($(strip $(N32_TRACE_MATRIX_EVENT)), yes)
+OPT_DEFS += -DN32_TRACE_MATRIX_EVENT
 endif
 ifeq ($(strip $(N32_TRACE_PERF)), yes)
 OPT_DEFS += -DN32_TRACE_PERF

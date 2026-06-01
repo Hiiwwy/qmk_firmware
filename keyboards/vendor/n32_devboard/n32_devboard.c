@@ -27,7 +27,7 @@
 #    endif
 #endif
 
-#define N32_CONFIG_MAGIC 0xA7
+#define N32_CONFIG_MAGIC 0xA8
 #if N32_USB_REPORT_RATE_DEFAULT == 1000
 #    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 0
 #elif N32_USB_REPORT_RATE_DEFAULT == 2000
@@ -43,31 +43,47 @@
 #    define N32_CONFIG_MAX_REPORT_RATE_INDEX 3
 #endif
 #define N32_CONFIG_DEFAULT_DEBOUNCE_MS 5
+#ifndef N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES
+#    define N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES 2U
+#endif
+#ifndef N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES
+#    define N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES 8U
+#endif
+#define N32_CONFIG_MIN_DMA_PRESS_FRAMES 1
+#define N32_CONFIG_MAX_DMA_PRESS_FRAMES 8
+#define N32_CONFIG_MIN_DMA_RELEASE_FRAMES 6
+#define N32_CONFIG_MAX_DMA_RELEASE_FRAMES 32
 
 enum n32_via_value_id {
-    id_n32_report_rate = 1,
-    id_n32_debounce    = 2,
-    id_n32_rgb_enable  = 3,
-    id_n32_rgb_mode    = 4,
-    id_n32_rgb_hue     = 5,
-    id_n32_rgb_sat     = 6,
-    id_n32_rgb_val     = 7,
-    id_n32_rgb_speed   = 8,
-    id_n32_rgb_zone    = 9,
+    id_n32_report_rate        = 1,
+    id_n32_debounce           = 2,
+    id_n32_rgb_enable         = 3,
+    id_n32_rgb_mode           = 4,
+    id_n32_rgb_hue            = 5,
+    id_n32_rgb_sat            = 6,
+    id_n32_rgb_val            = 7,
+    id_n32_rgb_speed          = 8,
+    id_n32_rgb_zone           = 9,
+    id_n32_dma_press_frames   = 10,
+    id_n32_dma_release_frames = 11,
 };
 
 typedef struct {
     uint8_t magic;
     uint8_t report_rate_index;
     uint8_t debounce_ms;
+    uint8_t dma_press_frames;
+    uint8_t dma_release_frames;
     uint8_t reserved;
 } n32_runtime_config_t;
 
 static n32_runtime_config_t n32_config = {
-    .magic             = N32_CONFIG_MAGIC,
-    .report_rate_index = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX,
-    .debounce_ms       = N32_CONFIG_DEFAULT_DEBOUNCE_MS,
-    .reserved          = 0,
+    .magic              = N32_CONFIG_MAGIC,
+    .report_rate_index  = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX,
+    .debounce_ms        = N32_CONFIG_DEFAULT_DEBOUNCE_MS,
+    .dma_press_frames   = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES,
+    .dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES,
+    .reserved           = 0,
 };
 
 static uint16_t n32_last_keycode;
@@ -161,10 +177,12 @@ static void n32_rgb_turn_off_now(void) {
 
 static void n32_runtime_config_sanitize(void) {
     if (n32_config.magic != N32_CONFIG_MAGIC) {
-        n32_config.magic             = N32_CONFIG_MAGIC;
-        n32_config.report_rate_index = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX;
-        n32_config.debounce_ms       = N32_CONFIG_DEFAULT_DEBOUNCE_MS;
-        n32_config.reserved          = 0;
+        n32_config.magic              = N32_CONFIG_MAGIC;
+        n32_config.report_rate_index  = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX;
+        n32_config.debounce_ms        = N32_CONFIG_DEFAULT_DEBOUNCE_MS;
+        n32_config.dma_press_frames   = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES;
+        n32_config.dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES;
+        n32_config.reserved           = 0;
     }
 
     if (n32_config.report_rate_index > N32_CONFIG_MAX_REPORT_RATE_INDEX) {
@@ -173,6 +191,14 @@ static void n32_runtime_config_sanitize(void) {
 
     if (n32_config.debounce_ms > 20) {
         n32_config.debounce_ms = N32_CONFIG_DEFAULT_DEBOUNCE_MS;
+    }
+
+    if (n32_config.dma_press_frames < N32_CONFIG_MIN_DMA_PRESS_FRAMES || n32_config.dma_press_frames > N32_CONFIG_MAX_DMA_PRESS_FRAMES) {
+        n32_config.dma_press_frames = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES;
+    }
+
+    if (n32_config.dma_release_frames < N32_CONFIG_MIN_DMA_RELEASE_FRAMES || n32_config.dma_release_frames > N32_CONFIG_MAX_DMA_RELEASE_FRAMES) {
+        n32_config.dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES;
     }
 }
 
@@ -197,6 +223,14 @@ static void n32_runtime_config_save(void) {
 
 uint8_t n32_get_debounce_ms(void) {
     return n32_config.debounce_ms;
+}
+
+uint8_t n32_get_matrix_dma_press_confirm_frames(void) {
+    return n32_config.dma_press_frames;
+}
+
+uint8_t n32_get_matrix_dma_release_confirm_frames(void) {
+    return n32_config.dma_release_frames;
 }
 
 #ifdef QUANTUM_PAINTER_ENABLE
@@ -750,9 +784,11 @@ static void n32_tft_next_page(void) {
 #ifdef RGB_MATRIX_ENABLE
 led_config_t g_led_config = {
     {
-        {0, 1, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {0, 1, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
     },
     {
         {0, 0},
@@ -870,6 +906,14 @@ static void n32_via_set_value(uint8_t *data) {
             n32_config.debounce_ms = value_data[0];
             n32_runtime_config_sanitize();
             break;
+        case id_n32_dma_press_frames:
+            n32_config.dma_press_frames = value_data[0];
+            n32_runtime_config_sanitize();
+            break;
+        case id_n32_dma_release_frames:
+            n32_config.dma_release_frames = value_data[0];
+            n32_runtime_config_sanitize();
+            break;
 #    ifdef RGB_MATRIX_ENABLE
         case id_n32_rgb_enable:
             if (value_data[0]) {
@@ -936,6 +980,12 @@ static void n32_via_get_value(uint8_t *data) {
             break;
         case id_n32_debounce:
             value_data[0] = n32_config.debounce_ms;
+            break;
+        case id_n32_dma_press_frames:
+            value_data[0] = n32_config.dma_press_frames;
+            break;
+        case id_n32_dma_release_frames:
+            value_data[0] = n32_config.dma_release_frames;
             break;
 #    ifdef RGB_MATRIX_ENABLE
         case id_n32_rgb_enable:
