@@ -2,7 +2,7 @@
   "name": "N32H487 QMK Keyboard",
   "vendorId": "0x1FC9",
   "productId": "0x0487",
-  "firmwareVersion": 3,
+  "firmwareVersion": 5,
   "matrix": {
     "rows": 5,
     "cols": 11
@@ -110,7 +110,7 @@
             {
               "label": "DMA Press Frames (frames)",
               "type": "range",
-              "options": [1, 8],
+              "options": [3, 8],
               "content": ["id_n32_dma_press_frames", 0, 10]
             },
             {

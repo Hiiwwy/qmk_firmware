@@ -31,6 +31,18 @@
 #    define N32_MATRIX_DMA_COLUMN_US 10U
 #endif
 
+#ifndef N32_MATRIX_DMA_SWITCH_DEAD_CYCLES
+#    define N32_MATRIX_DMA_SWITCH_DEAD_CYCLES 240U
+#endif
+
+#ifndef N32_MATRIX_DMA_SAMPLE_PERCENT
+#    define N32_MATRIX_DMA_SAMPLE_PERCENT 90U
+#endif
+
+#ifndef N32_MATRIX_DMA_SAMPLE_PHASE
+#    define N32_MATRIX_DMA_SAMPLE_PHASE 0
+#endif
+
 #ifndef N32_MATRIX_DMA_TIMER_FALLBACK_HZ
 #    define N32_MATRIX_DMA_TIMER_FALLBACK_HZ 240000000UL
 #endif
@@ -140,8 +152,6 @@ static void n32_matrix_trace_event_capture(const matrix_row_t rows[N32_MATRIX_DM
     }
     n32_dma_event_pending_active_col = n32_dma_active_col;
     n32_dma_event_pending            = true;
-#else
-    (void)rows;
 #endif
 }
 
@@ -182,8 +192,6 @@ static void n32_matrix_trace_event_flush(void) {
     if (offset > 0) {
         SEGGER_RTT_Write(0, buffer, offset < (int)sizeof(buffer) ? (unsigned)offset : sizeof(buffer) - 1U);
     }
-#else
-    (void)rows;
 #endif
 }
 
@@ -237,6 +245,14 @@ static uint16_t n32_matrix_mask(pin_t pin) {
     return (uint16_t)(1U << N32_PIN_INDEX(pin));
 }
 
+static inline void n32_matrix_wait_cycles(uint32_t cycles) {
+    uint32_t start = DWT->CYCCNT;
+
+    while ((uint32_t)(DWT->CYCCNT - start) < cycles) {
+        __NOP();
+    }
+}
+
 static void n32_matrix_gpio_input_pullup(pin_t pin) {
     GPIO_InitType init;
 
@@ -254,13 +270,14 @@ static void n32_matrix_release_all_cols(void) {
         uint16_t     mask  = n32_matrix_mask(n32_col_pins[col]);
         uint32_t     shift = (uint32_t)N32_PIN_INDEX(n32_col_pins[col]) * 2U;
 
-        port->PBSC = mask;
-        port->PMODE &= ~(GPIO_PMODE_BIT_MASK << shift);
+        port->PBSC  = mask;
+        port->PMODE = (port->PMODE & ~(GPIO_PMODE_BIT_MASK << shift)) | (GPIO_PMODE_OUTPUT << shift);
     }
 }
 
 static void n32_matrix_apply_col(uint8_t col) {
     n32_matrix_release_all_cols();
+    n32_matrix_wait_cycles(N32_MATRIX_DMA_SWITCH_DEAD_CYCLES);
 
     if (col < N32_MATRIX_DMA_COLS) {
         GPIO_Module *port  = n32_matrix_port(n32_col_pins[col]);
@@ -361,16 +378,25 @@ static void n32_matrix_decode_frame(void) {
 }
 
 static void n32_matrix_store_active_sample(void) {
-    uint8_t col = n32_dma_active_col;
+    int8_t col = (int8_t)n32_dma_active_col + (int8_t)N32_MATRIX_DMA_SAMPLE_PHASE;
+
+    while (col < 0) {
+        col += N32_MATRIX_DMA_COLS;
+    }
+    while (col >= N32_MATRIX_DMA_COLS) {
+        col -= N32_MATRIX_DMA_COLS;
+    }
 
     if (col >= N32_MATRIX_DMA_COLS) {
         return;
     }
 
-    n32_sample_gpioa[col] = n32_dma_gpioa;
-    n32_sample_gpiob[col] = n32_dma_gpiob;
-    n32_sample_gpioc[col] = n32_dma_gpioc;
-    n32_sample_gpiod[col] = n32_dma_gpiod;
+    uint8_t sample_col = (uint8_t)col;
+
+    n32_sample_gpioa[sample_col] = n32_dma_gpioa;
+    n32_sample_gpiob[sample_col] = n32_dma_gpiob;
+    n32_sample_gpioc[sample_col] = n32_dma_gpioc;
+    n32_sample_gpiod[sample_col] = n32_dma_gpiod;
 }
 
 static void n32_matrix_snapshot_rows(void) {
@@ -444,7 +470,7 @@ static void n32_matrix_timer_init(void) {
     TIM_TimeBaseInitType time_base;
     NVIC_InitType        nvic;
     uint32_t             ticks        = n32_matrix_timer_ticks();
-    uint32_t             compare_tick = (ticks * 3U) / 4U;
+    uint32_t             compare_tick = (ticks * N32_MATRIX_DMA_SAMPLE_PERCENT) / 100U;
 
     if (compare_tick < 2U) {
         compare_tick = 2U;
@@ -507,8 +533,18 @@ static void n32_matrix_trace_report(void) {
         return;
     }
 
-    char buffer[256];
-    int  length = snprintf(buffer, sizeof(buffer), "MATRIX dma_timer frames=%lu gen=%lu active_col=%u rows=%08lX/%08lX/%08lX/%08lX/%08lX p0=%04lX/%04lX/%04lX/%04lX p5=%04lX/%04lX/%04lX/%04lX\n", (unsigned long)n32_dma_frame_count, (unsigned long)n32_dma_frame_generation, (unsigned)n32_dma_active_col, (unsigned long)n32_dma_rows[0], (unsigned long)n32_dma_rows[1], (unsigned long)n32_dma_rows[2], (unsigned long)n32_dma_rows[3], (unsigned long)n32_dma_rows[4], (unsigned long)(n32_sample_gpioa[0] & 0xFFFFU), (unsigned long)(n32_sample_gpiob[0] & 0xFFFFU), (unsigned long)(n32_sample_gpioc[0] & 0xFFFFU), (unsigned long)(n32_sample_gpiod[0] & 0xFFFFU), (unsigned long)(n32_sample_gpioa[5] & 0xFFFFU), (unsigned long)(n32_sample_gpiob[5] & 0xFFFFU), (unsigned long)(n32_sample_gpioc[5] & 0xFFFFU), (unsigned long)(n32_sample_gpiod[5] & 0xFFFFU));
+    char buffer[320];
+    int  length = snprintf(buffer, sizeof(buffer), "MATRIX dma_timer frames=%lu gen=%lu active_col=%u rows=%08lX/%08lX/%08lX/%08lX/%08lX s=", (unsigned long)n32_dma_frame_count, (unsigned long)n32_dma_frame_generation, (unsigned)n32_dma_active_col, (unsigned long)n32_dma_rows[0], (unsigned long)n32_dma_rows[1], (unsigned long)n32_dma_rows[2], (unsigned long)n32_dma_rows[3], (unsigned long)n32_dma_rows[4]);
+
+    for (uint8_t col = 0; col < N32_MATRIX_DMA_COLS && length > 0 && length < (int)sizeof(buffer); ++col) {
+        length += snprintf(buffer + length, sizeof(buffer) - length, "%02X", (unsigned)n32_dma_samples[col]);
+        if (col + 1U < N32_MATRIX_DMA_COLS && length > 0 && length < (int)sizeof(buffer)) {
+            buffer[length++] = ',';
+        }
+    }
+    if (length > 0 && length < (int)sizeof(buffer)) {
+        length += snprintf(buffer + length, sizeof(buffer) - length, " p0=%04lX/%04lX/%04lX/%04lX p1=%04lX/%04lX/%04lX/%04lX p2=%04lX/%04lX/%04lX/%04lX\n", (unsigned long)(n32_sample_gpioa[0] & 0xFFFFU), (unsigned long)(n32_sample_gpiob[0] & 0xFFFFU), (unsigned long)(n32_sample_gpioc[0] & 0xFFFFU), (unsigned long)(n32_sample_gpiod[0] & 0xFFFFU), (unsigned long)(n32_sample_gpioa[1] & 0xFFFFU), (unsigned long)(n32_sample_gpiob[1] & 0xFFFFU), (unsigned long)(n32_sample_gpioc[1] & 0xFFFFU), (unsigned long)(n32_sample_gpiod[1] & 0xFFFFU), (unsigned long)(n32_sample_gpioa[2] & 0xFFFFU), (unsigned long)(n32_sample_gpiob[2] & 0xFFFFU), (unsigned long)(n32_sample_gpioc[2] & 0xFFFFU), (unsigned long)(n32_sample_gpiod[2] & 0xFFFFU));
+    }
 
     if (length > 0) {
         SEGGER_RTT_Write(0, buffer, length < (int)sizeof(buffer) ? (unsigned)length : sizeof(buffer) - 1U);
@@ -520,6 +556,9 @@ static void n32_matrix_trace_report(void) {
 
 void matrix_init_pins(void) {
     n32_matrix_trace_literal("MATRIX dma_timer pins init\n");
+
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
     for (uint8_t row = 0; row < N32_MATRIX_DMA_ROWS; ++row) {
         gpio_set_pin_input_high(n32_row_pins[row]);

@@ -27,7 +27,7 @@
 #    endif
 #endif
 
-#define N32_CONFIG_MAGIC 0xA8
+#define N32_CONFIG_MAGIC 0xAA
 #if N32_USB_REPORT_RATE_DEFAULT == 1000
 #    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 0
 #elif N32_USB_REPORT_RATE_DEFAULT == 2000
@@ -44,12 +44,12 @@
 #endif
 #define N32_CONFIG_DEFAULT_DEBOUNCE_MS 5
 #ifndef N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES
-#    define N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES 2U
+#    define N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES 3U
 #endif
 #ifndef N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES
 #    define N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES 8U
 #endif
-#define N32_CONFIG_MIN_DMA_PRESS_FRAMES 1
+#define N32_CONFIG_MIN_DMA_PRESS_FRAMES 3
 #define N32_CONFIG_MAX_DMA_PRESS_FRAMES 8
 #define N32_CONFIG_MIN_DMA_RELEASE_FRAMES 6
 #define N32_CONFIG_MAX_DMA_RELEASE_FRAMES 32
@@ -85,6 +85,9 @@ static n32_runtime_config_t n32_config = {
     .dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES,
     .reserved           = 0,
 };
+static bool n32_runtime_config_needs_save;
+
+static void n32_runtime_config_save(void);
 
 static uint16_t n32_last_keycode;
 static uint32_t n32_keypress_count;
@@ -183,22 +186,27 @@ static void n32_runtime_config_sanitize(void) {
         n32_config.dma_press_frames   = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES;
         n32_config.dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES;
         n32_config.reserved           = 0;
+        n32_runtime_config_needs_save = true;
     }
 
     if (n32_config.report_rate_index > N32_CONFIG_MAX_REPORT_RATE_INDEX) {
-        n32_config.report_rate_index = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX;
+        n32_config.report_rate_index  = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX;
+        n32_runtime_config_needs_save = true;
     }
 
     if (n32_config.debounce_ms > 20) {
-        n32_config.debounce_ms = N32_CONFIG_DEFAULT_DEBOUNCE_MS;
+        n32_config.debounce_ms        = N32_CONFIG_DEFAULT_DEBOUNCE_MS;
+        n32_runtime_config_needs_save = true;
     }
 
     if (n32_config.dma_press_frames < N32_CONFIG_MIN_DMA_PRESS_FRAMES || n32_config.dma_press_frames > N32_CONFIG_MAX_DMA_PRESS_FRAMES) {
-        n32_config.dma_press_frames = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES;
+        n32_config.dma_press_frames   = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES;
+        n32_runtime_config_needs_save = true;
     }
 
     if (n32_config.dma_release_frames < N32_CONFIG_MIN_DMA_RELEASE_FRAMES || n32_config.dma_release_frames > N32_CONFIG_MAX_DMA_RELEASE_FRAMES) {
         n32_config.dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES;
+        n32_runtime_config_needs_save = true;
     }
 }
 
@@ -210,8 +218,12 @@ static void n32_runtime_config_load(void) {
 #if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 4
     via_read_custom_config(&n32_config, 0, sizeof(n32_config));
 #endif
+    n32_runtime_config_needs_save = false;
     n32_runtime_config_sanitize();
     n32_runtime_config_apply();
+    if (n32_runtime_config_needs_save) {
+        n32_runtime_config_save();
+    }
 }
 
 static void n32_runtime_config_save(void) {
@@ -219,7 +231,19 @@ static void n32_runtime_config_save(void) {
 #if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 4
     via_update_custom_config(&n32_config, 0, sizeof(n32_config));
 #endif
+    n32_runtime_config_needs_save = false;
 }
+
+#ifdef VIA_ENABLE
+void via_init_kb(void) {
+    uint8_t magic = 0xFF;
+
+    via_read_custom_config(&magic, 0, sizeof(magic));
+    if (magic != N32_CONFIG_MAGIC) {
+        eeconfig_init_via();
+    }
+}
+#endif
 
 uint8_t n32_get_debounce_ms(void) {
     return n32_config.debounce_ms;
