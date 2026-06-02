@@ -187,7 +187,7 @@ static void n32_matrix_trace_event_flush(void) {
     }
 
     if (offset > 0 && offset < (int)sizeof(buffer)) {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, " pf=%u rf=%u pod=%04lX/%04lX/%04lX\n", (unsigned)n32_matrix_press_confirm_frames(), (unsigned)n32_matrix_release_confirm_frames(), (unsigned long)(GPIOA->POD & 0xFFFFU), (unsigned long)(GPIOB->POD & 0xFFFFU), (unsigned long)(GPIOC->POD & 0xFFFFU));
+        offset += snprintf(buffer + offset, sizeof(buffer) - offset, " cu=%u sp=%u ph=%d pf=%u rf=%u pod=%04lX/%04lX/%04lX\n", (unsigned)N32_MATRIX_DMA_COLUMN_US, (unsigned)N32_MATRIX_DMA_SAMPLE_PERCENT, (int)N32_MATRIX_DMA_SAMPLE_PHASE, (unsigned)n32_matrix_press_confirm_frames(), (unsigned)n32_matrix_release_confirm_frames(), (unsigned long)(GPIOA->POD & 0xFFFFU), (unsigned long)(GPIOB->POD & 0xFFFFU), (unsigned long)(GPIOC->POD & 0xFFFFU));
     }
     if (offset > 0) {
         SEGGER_RTT_Write(0, buffer, offset < (int)sizeof(buffer) ? (unsigned)offset : sizeof(buffer) - 1U);
@@ -628,11 +628,16 @@ void ATIM2_UP_IRQHandler(void) {
     n32_matrix_store_active_sample();
 
     uint8_t next_col = n32_dma_active_col + 1U;
+    bool    wrapped  = false;
     if (next_col >= N32_MATRIX_DMA_COLS) {
-        n32_matrix_decode_frame();
         next_col = 0;
+        wrapped  = true;
     }
 
     n32_dma_active_col = next_col;
     n32_matrix_apply_col(next_col);
+
+    if (wrapped) {
+        n32_matrix_decode_frame();
+    }
 }
