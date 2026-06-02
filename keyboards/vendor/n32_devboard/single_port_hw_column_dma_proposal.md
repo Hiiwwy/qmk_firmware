@@ -16,7 +16,7 @@ Current default firmware mode:
 ```make
 N32_MATRIX_DRIVER ?= dma_timer
 N32_MATRIX_DMA_HW_COLUMNS ?= single_port
-N32_MATRIX_DMA_COLUMN_US ?= 11U
+N32_MATRIX_DMA_COLUMN_US ?= 8U
 N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES ?= 2U
 N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES ?= 6U
 ```
@@ -315,8 +315,10 @@ Next test steps:
 
 ```text
 11 us/col: validated baseline
-10 us/col: next conservative test
-8 us/col: next target if 10 us is stable
+10 us/col: validated
+8 us/col: validated production candidate
+7 us/col: failed, key chatter/crosstalk observed
+6 us/col: failed, key chatter/crosstalk observed
 ```
 
 ## Expected Benefit
@@ -339,13 +341,12 @@ Expected impact:
 ```text
 IRQ count reduction: about 83 percent
 CPU headroom gain: validated by lower matrix CPU time
-matrix frame rate: about 15.15 kHz at 11 us/col
+matrix frame rate: about 20.83 kHz at 8 us/col
 timing jitter: lower, because column select is timer/DMA-driven
 ```
 
 The first target was lower CPU load and more deterministic column timing at the
-validated column period. The next target is finding the lowest stable column
-period.
+validated column period. The validated production candidate is 8 us/col.
 
 ## Risks
 
