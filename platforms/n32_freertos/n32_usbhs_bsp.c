@@ -32,6 +32,12 @@ void USB_BSP_EnableInterrupt(USB_CORE_MODULE *USBx) {
     NVIC_EnableIRQ(USB_HS_WKUP_IRQn);
     NVIC_SetPriority(USB_HS_IRQn, NVIC_EncodePriority(3, 2, 0));
     NVIC_EnableIRQ(USB_HS_IRQn);
+#ifdef USB_DEDICATED_EP_ENABLED
+    NVIC_SetPriority(USB_HS_EPx_OUT_IRQn, NVIC_EncodePriority(3, 2, 1));
+    NVIC_EnableIRQ(USB_HS_EPx_OUT_IRQn);
+    NVIC_SetPriority(USB_HS_EPx_IN_IRQn, NVIC_EncodePriority(3, 2, 1));
+    NVIC_EnableIRQ(USB_HS_EPx_IN_IRQn);
+#endif
 
     EXTI_ClrITPendBit(EXTI_LINE23);
     exti.EXTI_Line    = EXTI_LINE23;

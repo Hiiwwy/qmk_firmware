@@ -3,7 +3,6 @@
 #include "platform_deps.h"
 
 void n32_board_early_init(void) {
-    SystemInit();
     NVIC_SetPriorityGrouping(3);
 }
 

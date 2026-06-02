@@ -13,7 +13,8 @@
 #define TX7_FIFO_HS_SIZE 0
 #define TX8_FIFO_HS_SIZE 0
 
-#define USB_INTERNAL_DMA_ENABLED
+/* Keep HS in FIFO/slave mode while debugging EP0 HID descriptor transfers. */
+/* #define USB_INTERNAL_DMA_ENABLED */
 #ifndef USE_DEVICE_MODE
 #    define USE_DEVICE_MODE
 #endif

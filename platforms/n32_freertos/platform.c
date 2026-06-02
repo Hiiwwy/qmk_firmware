@@ -28,6 +28,10 @@
 #    define N32_QMK_TASK_STACK_WORDS 4096
 #endif
 
+#ifndef N32_QMK_TASK_YIELD_INTERVAL
+#    define N32_QMK_TASK_YIELD_INTERVAL 1
+#endif
+
 #ifdef CONSOLE_ENABLE
 #    define N32_RTT_TRACE(msg) SEGGER_RTT_Write(0, msg, sizeof(msg) - 1)
 #else
@@ -176,6 +180,7 @@ static void qmk_freertos_task(void *arg) {
 #endif
 
     bool main_loop_logged = false;
+    uint32_t yield_counter = 0;
     while (true) {
         uint32_t loop_start = n32_perf_cycles();
         uint32_t section_start;
@@ -210,7 +215,12 @@ static void qmk_freertos_task(void *arg) {
 #if N32_QMK_TASK_DELAY_MS > 0
         vTaskDelay(pdMS_TO_TICKS(1));
 #else
-        taskYIELD();
+#    if N32_QMK_TASK_YIELD_INTERVAL > 0
+        if (++yield_counter >= N32_QMK_TASK_YIELD_INTERVAL) {
+            yield_counter = 0;
+            taskYIELD();
+        }
+#    endif
 #endif
     }
 }

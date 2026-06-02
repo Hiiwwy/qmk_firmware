@@ -25,6 +25,37 @@
 
 extern USBD_Class_cb_TypeDef n32_usbhs_keyboard_cb;
 
+typedef struct {
+    uint32_t reset_count;
+    uint32_t configured_count;
+    uint32_t suspended_count;
+    uint32_t resumed_count;
+    uint32_t connected_count;
+    uint32_t disconnected_count;
+    uint32_t class_init_count;
+    uint32_t class_deinit_count;
+    uint32_t setup_count;
+    uint32_t get_config_count;
+    uint32_t ep0_rx_count;
+    uint32_t datain_count;
+    uint32_t dataout_count;
+    uint32_t raw_ep0_out_count;
+    uint32_t raw_out_count;
+    uint32_t raw_task_count;
+    uint32_t raw_drop_count;
+    uint16_t last_raw_ep0_length;
+    uint16_t last_raw_out_length;
+    uint8_t  last_speed;
+    uint8_t  last_cfgidx;
+    uint8_t  last_ep;
+    uint8_t  last_request_type;
+    uint8_t  last_request;
+    uint16_t last_value;
+    uint16_t last_index;
+    uint16_t last_length;
+} n32_usbhs_debug_counters_t;
+
+void n32_usbhs_debug_snapshot(n32_usbhs_debug_counters_t *snapshot);
 void n32_usbhs_shared_tx_done(void);
 #ifdef RAW_ENABLE
 void n32_usbhs_raw_tx_done(void);

@@ -6,6 +6,7 @@
 #endif
 #include "usb_driver.h"
 #include "usbhs_bsp.h"
+#include "usbhs_core.h"
 #include "usbd_desc.h"
 #include "usbd_req.h"
 
@@ -29,11 +30,19 @@ __ALIGN_BEGIN static uint32_t hid_idle_state[N32_USBHS_INTERFACE_COUNT] __ALIGN_
 __ALIGN_BEGIN static uint8_t  hid_out_report[HID_OUT_PACKET] __ALIGN_END;
 __ALIGN_BEGIN static uint8_t  ep0_out_report[HID_OUT_PACKET] __ALIGN_END;
 static uint8_t                ep0_out_interface;
+static n32_usbhs_debug_counters_t n32_usbhs_debug_counters;
+
+extern USB_CORE_MODULE USB_dev;
 
 #ifdef RAW_ENABLE
+#    ifndef RAW_REPORT_PACKET
+#        define RAW_REPORT_PACKET 32U
+#    endif
 __ALIGN_BEGIN static uint8_t raw_out_report[RAW_OUT_PACKET] __ALIGN_END;
-__ALIGN_BEGIN static uint8_t raw_pending_report[RAW_OUT_PACKET] __ALIGN_END;
+__ALIGN_BEGIN static uint8_t raw_ep0_report[RAW_OUT_PACKET] __ALIGN_END;
+__ALIGN_BEGIN static uint8_t raw_pending_report[RAW_REPORT_PACKET] __ALIGN_END;
 static volatile uint8_t      raw_report_pending;
+static uint16_t              raw_ep0_report_length;
 #endif
 
 __ALIGN_BEGIN static const uint8_t shared_report_desc[] __ALIGN_END = {
@@ -50,7 +59,7 @@ __ALIGN_BEGIN static const uint8_t shared_report_desc[] __ALIGN_END = {
 
 #ifdef RAW_ENABLE
 __ALIGN_BEGIN static const uint8_t raw_report_desc[] __ALIGN_END = {
-    0x06, 0x60, 0xFF, 0x09, 0x61, 0xA1, 0x01, 0x09, 0x62, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x95, RAW_IN_PACKET, 0x75, 0x08, 0x81, 0x02, 0x09, 0x63, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x95, RAW_OUT_PACKET, 0x75, 0x08, 0x91, 0x02, 0xC0,
+    0x06, 0x60, 0xFF, 0x09, 0x61, 0xA1, 0x01, 0x09, 0x62, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x95, RAW_REPORT_PACKET, 0x75, 0x08, 0x81, 0x02, 0x09, 0x63, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x95, RAW_REPORT_PACKET, 0x75, 0x08, 0x91, 0x02, 0xC0,
 };
 #endif
 
@@ -107,7 +116,7 @@ __ALIGN_BEGIN static uint8_t keyboard_config_desc[N32_USBHS_KEYBOARD_CFGDESC_SIZ
     0x03,
     0x00,
     0x00,
-    0x00,
+    0x05,
     0x09,
     N32_USBHS_KEYBOARD_DESCRIPTOR_TYPE,
     0x11,
@@ -142,7 +151,35 @@ static void n32_usbhs_handle_output_report(const uint8_t *report) {
     }
 }
 
+#ifdef RAW_ENABLE
+static void n32_usbhs_queue_raw_report(const uint8_t *report, uint32_t length) {
+    const uint8_t *payload = report;
+
+    if (length == (RAW_REPORT_PACKET + 1U) && report[0] == 0) {
+        payload = report + 1;
+    } else if (length < RAW_REPORT_PACKET) {
+        n32_usbhs_debug_counters.raw_drop_count++;
+        return;
+    }
+
+    if (!raw_report_pending) {
+        memcpy(raw_pending_report, payload, RAW_REPORT_PACKET);
+        raw_report_pending = 1;
+    } else {
+        n32_usbhs_debug_counters.raw_drop_count++;
+    }
+}
+#endif
+
+void n32_usbhs_debug_snapshot(n32_usbhs_debug_counters_t *snapshot) {
+    *snapshot = n32_usbhs_debug_counters;
+}
+
 static uint8_t n32_usbhs_keyboard_init(void *pdev, uint8_t cfgidx) {
+    USB_CORE_MODULE *usb = (USB_CORE_MODULE *)pdev;
+
+    n32_usbhs_debug_counters.class_init_count++;
+    n32_usbhs_debug_counters.last_cfgidx = cfgidx;
     (void)cfgidx;
     USBDEV_EP_Open(pdev, N32_USBHS_HID_IN_EP, HID_IN_PACKET, USB_EP_INT);
     USBDEV_EP_Open(pdev, N32_USBHS_HID_OUT_EP, HID_OUT_PACKET, USB_EP_INT);
@@ -156,10 +193,33 @@ static uint8_t n32_usbhs_keyboard_init(void *pdev, uint8_t cfgidx) {
     USBDEV_SetEPStatus(pdev, N32_USBHS_RAW_OUT_EP, USB_EP_RX_VALID);
 #endif
 
+#ifdef USB_DEDICATED_EP_ENABLED
+    uint32_t in_mask  = USBHS_DINEPINTEN_TXCIEN | USBHS_DINEPINTEN_TOIEN | USBHS_DINEPINTEN_EPDIEN;
+    uint32_t out_mask = USBHS_DOUTEPINTEN_STUPDNEIEN | USBHS_DOUTEPINTEN_TXCIEN | USBHS_DOUTEPINTEN_EPDIEN;
+    USB_WRITE_REG32(&usb->regs.DCSR->DINEPXINTEN[N32_USBHS_HID_IN_EP & 0x0FU], in_mask);
+    USB_WRITE_REG32(&usb->regs.DCSR->DOUTEPXINTEN[N32_USBHS_HID_OUT_EP & 0x0FU], out_mask);
+#    ifdef RAW_ENABLE
+    USB_WRITE_REG32(&usb->regs.DCSR->DINEPXINTEN[N32_USBHS_RAW_IN_EP & 0x0FU], in_mask);
+    USB_WRITE_REG32(&usb->regs.DCSR->DOUTEPXINTEN[N32_USBHS_RAW_OUT_EP & 0x0FU], out_mask);
+#    endif
+#else
+    uint32_t daepinten = USB_READ_REG32(&usb->regs.DCSR->DAEPINTEN);
+    daepinten |= (1UL << (N32_USBHS_HID_IN_EP & 0x0FU));
+    daepinten |= (1UL << (16U + (N32_USBHS_HID_OUT_EP & 0x0FU)));
+#    ifdef RAW_ENABLE
+    daepinten |= (1UL << (N32_USBHS_RAW_IN_EP & 0x0FU));
+    daepinten |= (1UL << (16U + (N32_USBHS_RAW_OUT_EP & 0x0FU)));
+#    endif
+    USB_WRITE_REG32(&usb->regs.DCSR->DAEPINTEN, daepinten);
+    USB_SET_REG32_BIT(&usb->regs.DCSR->DOUTEPINTEN, USBHS_DOUTEPINTEN_TXCIEN | USBHS_DOUTEPINTEN_EPDIEN);
+#endif
+
     return USBD_OK;
 }
 
 static uint8_t n32_usbhs_keyboard_deinit(void *pdev, uint8_t cfgidx) {
+    n32_usbhs_debug_counters.class_deinit_count++;
+    n32_usbhs_debug_counters.last_cfgidx = cfgidx;
     (void)cfgidx;
     USBDEV_EP_Close(pdev, N32_USBHS_HID_IN_EP);
     USBDEV_EP_Close(pdev, N32_USBHS_HID_OUT_EP);
@@ -175,6 +235,13 @@ static uint8_t n32_usbhs_keyboard_setup(void *pdev, USB_SETUP_REQ *req) {
     uint8_t *pbuf      = NULL;
     uint8_t  status    = USBD_OK;
     uint8_t  interface = (uint8_t)(req->wIndex & 0xFF);
+
+    n32_usbhs_debug_counters.setup_count++;
+    n32_usbhs_debug_counters.last_request_type = req->bmRequest;
+    n32_usbhs_debug_counters.last_request      = req->bRequest;
+    n32_usbhs_debug_counters.last_value        = req->wValue;
+    n32_usbhs_debug_counters.last_index        = req->wIndex;
+    n32_usbhs_debug_counters.last_length       = req->wLength;
 
     if (interface >= N32_USBHS_INTERFACE_COUNT) {
         interface = 0;
@@ -197,7 +264,15 @@ static uint8_t n32_usbhs_keyboard_setup(void *pdev, USB_SETUP_REQ *req) {
                     break;
                 case N32_USBHS_KEYBOARD_REQ_SET_REPORT:
                     ep0_out_interface = interface;
-                    USBD_CtrlPrepareRx(pdev, ep0_out_report, MIN(req->wLength, sizeof(ep0_out_report)));
+#ifdef RAW_ENABLE
+                    if (interface == 1) {
+                        raw_ep0_report_length = MIN(req->wLength, sizeof(raw_ep0_report));
+                        USBD_CtrlPrepareRx(pdev, raw_ep0_report, raw_ep0_report_length);
+                    } else
+#endif
+                    {
+                        USBD_CtrlPrepareRx(pdev, ep0_out_report, MIN(req->wLength, sizeof(ep0_out_report)));
+                    }
                     break;
                 default:
                     USBD_CtrlError(pdev, req);
@@ -255,6 +330,17 @@ static uint8_t n32_usbhs_keyboard_setup(void *pdev, USB_SETUP_REQ *req) {
 static uint8_t n32_usbhs_keyboard_ep0_rx_ready(void *pdev) {
     (void)pdev;
 
+    n32_usbhs_debug_counters.ep0_rx_count++;
+
+#ifdef RAW_ENABLE
+    if (ep0_out_interface == 1) {
+        n32_usbhs_debug_counters.raw_ep0_out_count++;
+        n32_usbhs_debug_counters.last_raw_ep0_length = raw_ep0_report_length;
+        n32_usbhs_queue_raw_report(raw_ep0_report, raw_ep0_report_length);
+        return USBD_OK;
+    }
+#endif
+
     if (ep0_out_interface == 0) {
         n32_usbhs_handle_output_report(ep0_out_report);
     }
@@ -263,13 +349,17 @@ static uint8_t n32_usbhs_keyboard_ep0_rx_ready(void *pdev) {
 }
 
 static uint8_t *n32_usbhs_keyboard_get_config(uint8_t speed, uint16_t *length) {
-    (void)speed;
+    n32_usbhs_debug_counters.get_config_count++;
+    n32_usbhs_debug_counters.last_speed = speed;
     *length = sizeof(keyboard_config_desc);
     return keyboard_config_desc;
 }
 
 static uint8_t n32_usbhs_keyboard_datain(void *pdev, uint8_t epnum) {
     (void)pdev;
+
+    n32_usbhs_debug_counters.datain_count++;
+    n32_usbhs_debug_counters.last_ep = epnum;
 
     if (epnum == N32_USBHS_HID_IN_EP || epnum == (N32_USBHS_HID_IN_EP & 0x0F)) {
         n32_usbhs_shared_tx_done();
@@ -284,6 +374,9 @@ static uint8_t n32_usbhs_keyboard_datain(void *pdev, uint8_t epnum) {
 }
 
 static uint8_t n32_usbhs_keyboard_dataout(void *pdev, uint8_t epnum) {
+    n32_usbhs_debug_counters.dataout_count++;
+    n32_usbhs_debug_counters.last_ep = epnum;
+
     if (epnum == N32_USBHS_HID_OUT_EP || epnum == (N32_USBHS_HID_OUT_EP & 0x0F)) {
         n32_usbhs_handle_output_report(hid_out_report);
         USBDEV_EP_PrepareRx(pdev, N32_USBHS_HID_OUT_EP, hid_out_report, HID_OUT_PACKET);
@@ -292,10 +385,16 @@ static uint8_t n32_usbhs_keyboard_dataout(void *pdev, uint8_t epnum) {
 
 #ifdef RAW_ENABLE
     if (epnum == N32_USBHS_RAW_OUT_EP || epnum == (N32_USBHS_RAW_OUT_EP & 0x0F)) {
-        if (!raw_report_pending) {
-            memcpy(raw_pending_report, raw_out_report, RAW_OUT_PACKET);
-            raw_report_pending = 1;
+        USB_CORE_MODULE *usb = (USB_CORE_MODULE *)pdev;
+        uint8_t          raw_out_ep = N32_USBHS_RAW_OUT_EP & 0x0F;
+        uint32_t         rx_length  = usb->dev.out_ep[raw_out_ep].xfer_count;
+
+        n32_usbhs_debug_counters.raw_out_count++;
+        n32_usbhs_debug_counters.last_raw_out_length = (uint16_t)rx_length;
+        if (rx_length > sizeof(raw_out_report)) {
+            rx_length = sizeof(raw_out_report);
         }
+        n32_usbhs_queue_raw_report(raw_out_report, rx_length);
         USBDEV_EP_PrepareRx(pdev, N32_USBHS_RAW_OUT_EP, raw_out_report, RAW_OUT_PACKET);
         USBDEV_SetEPStatus(pdev, N32_USBHS_RAW_OUT_EP, USB_EP_RX_VALID);
     }
@@ -306,7 +405,7 @@ static uint8_t n32_usbhs_keyboard_dataout(void *pdev, uint8_t epnum) {
 
 #ifdef RAW_ENABLE
 void n32_usbhs_raw_hid_task(void) {
-    uint8_t data[RAW_OUT_PACKET];
+    uint8_t data[RAW_REPORT_PACKET];
 
     if (!raw_report_pending) {
         return;
@@ -314,16 +413,30 @@ void n32_usbhs_raw_hid_task(void) {
 
     memcpy(data, raw_pending_report, sizeof(data));
     raw_report_pending = 0;
+    n32_usbhs_debug_counters.raw_task_count++;
     raw_hid_receive(data, sizeof(data));
 }
 #endif
 
-void n32_usbhs_user_init(void) {}
-void n32_usbhs_user_device_reset(uint8_t speed) {
-    (void)speed;
+void n32_usbhs_user_init(void) {
 }
-void n32_usbhs_user_device_configured(void) {}
-void n32_usbhs_user_device_suspended(void) {}
-void n32_usbhs_user_device_resumed(void) {}
-void n32_usbhs_user_device_connected(void) {}
-void n32_usbhs_user_device_disconnected(void) {}
+void n32_usbhs_user_device_reset(uint8_t speed) {
+    n32_usbhs_debug_counters.reset_count++;
+    n32_usbhs_debug_counters.last_speed = speed;
+    USB_EP0_OutStart(&USB_dev);
+}
+void n32_usbhs_user_device_configured(void) {
+    n32_usbhs_debug_counters.configured_count++;
+}
+void n32_usbhs_user_device_suspended(void) {
+    n32_usbhs_debug_counters.suspended_count++;
+}
+void n32_usbhs_user_device_resumed(void) {
+    n32_usbhs_debug_counters.resumed_count++;
+}
+void n32_usbhs_user_device_connected(void) {
+    n32_usbhs_debug_counters.connected_count++;
+}
+void n32_usbhs_user_device_disconnected(void) {
+    n32_usbhs_debug_counters.disconnected_count++;
+}

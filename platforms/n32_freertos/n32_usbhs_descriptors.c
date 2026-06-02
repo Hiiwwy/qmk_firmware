@@ -119,5 +119,5 @@ uint8_t *USBD_USER_ConfigStrDescriptor(uint8_t speed, uint16_t *length) {
 
 uint8_t *USBD_USER_InterfaceStrDescriptor(uint8_t speed, uint16_t *length) {
     (void)speed;
-    return n32_usbhs_string("N32H487 HID Keyboard", length);
+    return n32_usbhs_string("N32H487 VIA Raw HID", length);
 }
