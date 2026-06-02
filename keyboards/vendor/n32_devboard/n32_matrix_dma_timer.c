@@ -55,6 +55,10 @@
 #    define N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES 8U
 #endif
 
+#ifndef N32_MATRIX_DMA_HW_COLUMNS
+#    define N32_MATRIX_DMA_HW_COLUMNS 1
+#endif
+
 #define N32_MATRIX_DMA_COLS MATRIX_COLS
 #define N32_MATRIX_DMA_ROWS MATRIX_ROWS
 #define N32_MATRIX_GPIO_PORT_COUNT 6U
@@ -68,10 +72,12 @@ uint8_t        n32_get_matrix_dma_release_confirm_frames(void);
 static uint8_t n32_matrix_press_confirm_frames(void);
 static uint8_t n32_matrix_release_confirm_frames(void);
 
-static volatile uint32_t     n32_dma_gpioa;
-static volatile uint32_t     n32_dma_gpiob;
-static volatile uint32_t     n32_dma_gpioc;
-static volatile uint32_t     n32_dma_gpiod;
+#if !N32_MATRIX_DMA_HW_COLUMNS
+static volatile uint32_t n32_dma_gpioa;
+static volatile uint32_t n32_dma_gpiob;
+static volatile uint32_t n32_dma_gpioc;
+static volatile uint32_t n32_dma_gpiod;
+#endif
 static volatile uint32_t     n32_sample_gpioa[N32_MATRIX_DMA_COLS];
 static volatile uint32_t     n32_sample_gpiob[N32_MATRIX_DMA_COLS];
 static volatile uint32_t     n32_sample_gpioc[N32_MATRIX_DMA_COLS];
@@ -89,6 +95,10 @@ static uint16_t              n32_col_masks[N32_MATRIX_DMA_COLS];
 static uint16_t              n32_col_release_masks[N32_MATRIX_GPIO_PORT_COUNT];
 static uint32_t              n32_col_pmode_clear_masks[N32_MATRIX_GPIO_PORT_COUNT];
 static uint32_t              n32_col_pmode_output_bits[N32_MATRIX_GPIO_PORT_COUNT];
+#if N32_MATRIX_DMA_HW_COLUMNS
+static uint32_t n32_col_dma_gpioa[N32_MATRIX_DMA_COLS];
+static uint32_t n32_col_dma_gpioc[N32_MATRIX_DMA_COLS];
+#endif
 
 #ifdef N32_TRACE_MATRIX
 static uint32_t n32_dma_trace_timer;
@@ -194,7 +204,7 @@ static void n32_matrix_trace_event_flush(void) {
     }
 
     if (offset > 0 && offset < (int)sizeof(buffer)) {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, " cu=%u sp=%u ph=%d pf=%u rf=%u pod=%04lX/%04lX/%04lX\n", (unsigned)N32_MATRIX_DMA_COLUMN_US, (unsigned)N32_MATRIX_DMA_SAMPLE_PERCENT, (int)N32_MATRIX_DMA_SAMPLE_PHASE, (unsigned)n32_matrix_press_confirm_frames(), (unsigned)n32_matrix_release_confirm_frames(), (unsigned long)(GPIOA->POD & 0xFFFFU), (unsigned long)(GPIOB->POD & 0xFFFFU), (unsigned long)(GPIOC->POD & 0xFFFFU));
+        offset += snprintf(buffer + offset, sizeof(buffer) - offset, " cu=%u dc=%u sp=%u ph=%d pf=%u rf=%u hc=%u pod=%04lX/%04lX/%04lX\n", (unsigned)N32_MATRIX_DMA_COLUMN_US, (unsigned)N32_MATRIX_DMA_SWITCH_DEAD_CYCLES, (unsigned)N32_MATRIX_DMA_SAMPLE_PERCENT, (int)N32_MATRIX_DMA_SAMPLE_PHASE, (unsigned)n32_matrix_press_confirm_frames(), (unsigned)n32_matrix_release_confirm_frames(), (unsigned)N32_MATRIX_DMA_HW_COLUMNS, (unsigned long)(GPIOA->POD & 0xFFFFU), (unsigned long)(GPIOB->POD & 0xFFFFU), (unsigned long)(GPIOC->POD & 0xFFFFU));
     }
     if (offset > 0) {
         SEGGER_RTT_Write(0, buffer, offset < (int)sizeof(buffer) ? (unsigned)offset : sizeof(buffer) - 1U);
@@ -308,6 +318,27 @@ static void n32_matrix_prepare_col_fastio(void) {
         n32_col_pmode_clear_masks[port_index] |= (GPIO_PMODE_BIT_MASK << shift);
         n32_col_pmode_output_bits[port_index] |= (GPIO_PMODE_OUTPUT << shift);
     }
+
+#if N32_MATRIX_DMA_HW_COLUMNS
+    for (uint8_t step = 0; step < N32_MATRIX_DMA_COLS; ++step) {
+        uint8_t  col        = step + 1U;
+        uint32_t gpioa_pbsc = n32_col_release_masks[0];
+        uint32_t gpioc_pbsc = n32_col_release_masks[2];
+
+        if (col >= N32_MATRIX_DMA_COLS) {
+            col = 0;
+        }
+
+        if (n32_col_ports[col] == GPIOA) {
+            gpioa_pbsc |= (uint32_t)n32_col_masks[col] << 16;
+        } else if (n32_col_ports[col] == GPIOC) {
+            gpioc_pbsc |= (uint32_t)n32_col_masks[col] << 16;
+        }
+
+        n32_col_dma_gpioa[step] = gpioa_pbsc;
+        n32_col_dma_gpioc[step] = gpioc_pbsc;
+    }
+#endif
 }
 
 static void n32_matrix_release_all_cols(void) {
@@ -420,6 +451,7 @@ static void n32_matrix_decode_frame(void) {
     n32_matrix_trace_event_capture(filtered_rows);
 }
 
+#if !N32_MATRIX_DMA_HW_COLUMNS
 static void n32_matrix_store_active_sample(void) {
     int8_t col = (int8_t)n32_dma_active_col + (int8_t)N32_MATRIX_DMA_SAMPLE_PHASE;
 
@@ -441,6 +473,7 @@ static void n32_matrix_store_active_sample(void) {
     n32_sample_gpioc[sample_col] = n32_dma_gpioc;
     n32_sample_gpiod[sample_col] = n32_dma_gpiod;
 }
+#endif
 
 static void n32_matrix_snapshot_rows(void) {
     __disable_irq();
@@ -464,7 +497,7 @@ static uint32_t n32_matrix_timer_ticks(void) {
     return ticks;
 }
 
-static void n32_matrix_dma_init_channel(DMA_ChannelType *channel, uint32_t remap, volatile uint32_t *periph, volatile uint32_t *memory) {
+static void n32_matrix_dma_init_channel(DMA_ChannelType *channel, uint32_t remap, volatile uint32_t *periph, volatile uint32_t *memory, uint32_t direction, uint16_t buf_size, uint32_t memory_inc) {
     DMA_InitType dma;
 
     DMA_EnableChannel(channel, DISABLE);
@@ -472,10 +505,10 @@ static void n32_matrix_dma_init_channel(DMA_ChannelType *channel, uint32_t remap
     DMA_StructInit(&dma);
     dma.PeriphAddr     = (uint32_t)periph;
     dma.MemAddr        = (uint32_t)memory;
-    dma.Direction      = DMA_DIR_PERIPH_SRC;
-    dma.BufSize        = 1;
+    dma.Direction      = direction;
+    dma.BufSize        = buf_size;
     dma.PeriphInc      = DMA_PERIPH_INC_DISABLE;
-    dma.MemoryInc      = DMA_MEM_INC_DISABLE;
+    dma.MemoryInc      = memory_inc;
     dma.PeriphDataSize = DMA_PERIPH_DATA_WIDTH_WORD;
     dma.MemDataSize    = DMA_MEM_DATA_WIDTH_WORD;
     dma.CircularMode   = DMA_MODE_CIRCULAR;
@@ -492,17 +525,30 @@ static void n32_matrix_dma_init(void) {
     n32_matrix_trace_literal("MATRIX dma_timer dma init\n");
 
     RCC_EnableAHBPeriphClk(RCC_AHB_PERIPHEN_DMA2, ENABLE);
-    DMA_ClrIntPendingBit(DMA_INT_GLB1 | DMA_INT_GLB2 | DMA_INT_GLB3 | DMA_INT_GLB4, DMA2);
+    DMA_ClrIntPendingBit(DMA_INT_GLB1 | DMA_INT_GLB2 | DMA_INT_GLB3 | DMA_INT_GLB4 | DMA_INT_GLB5 | DMA_INT_GLB6, DMA2);
 
-    n32_matrix_dma_init_channel(DMA2_CH1, DMA_REMAP_ATIM2_CH1, &GPIOA->PID, &n32_dma_gpioa);
-    n32_matrix_dma_init_channel(DMA2_CH2, DMA_REMAP_ATIM2_CH2, &GPIOB->PID, &n32_dma_gpiob);
-    n32_matrix_dma_init_channel(DMA2_CH3, DMA_REMAP_ATIM2_CH3, &GPIOC->PID, &n32_dma_gpioc);
-    n32_matrix_dma_init_channel(DMA2_CH4, DMA_REMAP_ATIM2_CH4, &GPIOD->PID, &n32_dma_gpiod);
-
+#if N32_MATRIX_DMA_HW_COLUMNS
+    n32_matrix_dma_init_channel(DMA2_CH1, DMA_REMAP_ATIM2_CH1, &GPIOA->PID, &n32_sample_gpioa[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+    n32_matrix_dma_init_channel(DMA2_CH2, DMA_REMAP_ATIM2_CH2, &GPIOB->PID, &n32_sample_gpiob[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+    n32_matrix_dma_init_channel(DMA2_CH3, DMA_REMAP_ATIM2_CH3, &GPIOC->PID, &n32_sample_gpioc[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+    n32_matrix_dma_init_channel(DMA2_CH4, DMA_REMAP_ATIM2_CH4, &GPIOD->PID, &n32_sample_gpiod[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+    n32_matrix_dma_init_channel(DMA2_CH5, DMA_REMAP_ATIM2_UP, &GPIOA->PBSC, &n32_col_dma_gpioa[0], DMA_DIR_PERIPH_DST, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+    n32_matrix_dma_init_channel(DMA2_CH6, DMA_REMAP_ATIM2_UP, &GPIOC->PBSC, &n32_col_dma_gpioc[0], DMA_DIR_PERIPH_DST, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+    DMA_ConfigInt(DMA2_CH4, DMA_INT_TXC | DMA_INT_ERR, ENABLE);
+#else
+    n32_matrix_dma_init_channel(DMA2_CH1, DMA_REMAP_ATIM2_CH1, &GPIOA->PID, &n32_dma_gpioa, DMA_DIR_PERIPH_SRC, 1, DMA_MEM_INC_DISABLE);
+    n32_matrix_dma_init_channel(DMA2_CH2, DMA_REMAP_ATIM2_CH2, &GPIOB->PID, &n32_dma_gpiob, DMA_DIR_PERIPH_SRC, 1, DMA_MEM_INC_DISABLE);
+    n32_matrix_dma_init_channel(DMA2_CH3, DMA_REMAP_ATIM2_CH3, &GPIOC->PID, &n32_dma_gpioc, DMA_DIR_PERIPH_SRC, 1, DMA_MEM_INC_DISABLE);
+    n32_matrix_dma_init_channel(DMA2_CH4, DMA_REMAP_ATIM2_CH4, &GPIOD->PID, &n32_dma_gpiod, DMA_DIR_PERIPH_SRC, 1, DMA_MEM_INC_DISABLE);
+#endif
     DMA_EnableChannel(DMA2_CH1, ENABLE);
     DMA_EnableChannel(DMA2_CH2, ENABLE);
     DMA_EnableChannel(DMA2_CH3, ENABLE);
     DMA_EnableChannel(DMA2_CH4, ENABLE);
+#if N32_MATRIX_DMA_HW_COLUMNS
+    DMA_EnableChannel(DMA2_CH5, ENABLE);
+    DMA_EnableChannel(DMA2_CH6, ENABLE);
+#endif
 
     n32_matrix_trace_literal("MATRIX dma_timer dma enabled\n");
 }
@@ -525,7 +571,7 @@ static void n32_matrix_timer_init(void) {
     RCC_EnableAHBPeriphClk(RCC_AHB_PERIPHEN_ATIM2, ENABLE);
 
     TIM_Enable(ATIM2, DISABLE);
-    TIM_EnableDma(ATIM2, TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 | TIM_DMA_CC4, DISABLE);
+    TIM_EnableDma(ATIM2, TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 | TIM_DMA_CC4 | TIM_DMA_UPDATE, DISABLE);
     TIM_ConfigInt(ATIM2, TIM_INT_UPDATE, DISABLE);
     TIM_DeInit(ATIM2);
 
@@ -543,14 +589,23 @@ static void n32_matrix_timer_init(void) {
     TIM_SetCnt(ATIM2, 0);
     TIM_ClrIntPendingBit(ATIM2, TIM_INT_UPDATE | TIM_INT_CC1 | TIM_INT_CC2 | TIM_INT_CC3 | TIM_INT_CC4);
 
-    nvic.NVIC_IRQChannel                   = ATIM2_UP_IRQn;
+#if N32_MATRIX_DMA_HW_COLUMNS
+    nvic.NVIC_IRQChannel = DMA2_Channel4_IRQn;
+#else
+    nvic.NVIC_IRQChannel = ATIM2_UP_IRQn;
+#endif
     nvic.NVIC_IRQChannelPreemptionPriority = 5;
     nvic.NVIC_IRQChannelSubPriority        = 0;
     nvic.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&nvic);
 
+#if N32_MATRIX_DMA_HW_COLUMNS
+    TIM_ConfigInt(ATIM2, TIM_INT_UPDATE, DISABLE);
+    TIM_EnableDma(ATIM2, TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 | TIM_DMA_CC4 | TIM_DMA_UPDATE, ENABLE);
+#else
     TIM_ConfigInt(ATIM2, TIM_INT_UPDATE, ENABLE);
     TIM_EnableDma(ATIM2, TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 | TIM_DMA_CC4, ENABLE);
+#endif
 
     n32_matrix_trace_literal("MATRIX dma_timer timer enable\n");
     TIM_Enable(ATIM2, ENABLE);
@@ -559,7 +614,7 @@ static void n32_matrix_timer_init(void) {
 static void n32_matrix_trace_init(void) {
 #ifdef N32_TRACE_MATRIX
     char buffer[128];
-    int  length = snprintf(buffer, sizeof(buffer), "MATRIX dma_timer init rows=%u cols=%u col_us=%u pf=%u rf=%u dma=DMA2_CH1-4 timer=ATIM2\n", (unsigned)N32_MATRIX_DMA_ROWS, (unsigned)N32_MATRIX_DMA_COLS, (unsigned)N32_MATRIX_DMA_COLUMN_US, (unsigned)n32_matrix_press_confirm_frames(), (unsigned)n32_matrix_release_confirm_frames());
+    int  length = snprintf(buffer, sizeof(buffer), "MATRIX dma_timer init rows=%u cols=%u col_us=%u pf=%u rf=%u dma=DMA2_CH1-6 timer=ATIM2 hwcol=%u\n", (unsigned)N32_MATRIX_DMA_ROWS, (unsigned)N32_MATRIX_DMA_COLS, (unsigned)N32_MATRIX_DMA_COLUMN_US, (unsigned)n32_matrix_press_confirm_frames(), (unsigned)n32_matrix_release_confirm_frames(), (unsigned)N32_MATRIX_DMA_HW_COLUMNS);
 
     if (length > 0) {
         SEGGER_RTT_Write(0, buffer, length < (int)sizeof(buffer) ? (unsigned)length : sizeof(buffer) - 1U);
@@ -662,6 +717,22 @@ void matrix_output_unselect_delay(uint8_t line, bool key_pressed) {
     (void)key_pressed;
 }
 
+#if N32_MATRIX_DMA_HW_COLUMNS
+void DMA2_Channel4_IRQHandler(void) {
+    bool transfer_complete = DMA_GetIntStatus(DMA_INT_TXC4, DMA2) != RESET;
+
+    if (!transfer_complete && DMA_GetIntStatus(DMA_INT_ERR4, DMA2) == RESET) {
+        return;
+    }
+
+    DMA_ClrIntPendingBit(DMA_INT_GLB4, DMA2);
+
+    if (transfer_complete) {
+        n32_dma_active_col = 0;
+        n32_matrix_decode_frame();
+    }
+}
+#else
 void ATIM2_UP_IRQHandler(void) {
     if (TIM_GetIntStatus(ATIM2, TIM_INT_UPDATE) == RESET) {
         return;
@@ -685,3 +756,4 @@ void ATIM2_UP_IRQHandler(void) {
         n32_matrix_decode_frame();
     }
 }
+#endif
