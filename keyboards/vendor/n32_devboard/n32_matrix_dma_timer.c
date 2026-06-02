@@ -23,8 +23,8 @@
 #    error "n32_matrix_dma_timer.c currently supports ROW2COL only."
 #endif
 
-#if MATRIX_ROWS != 5 || MATRIX_COLS != 11
-#    error "n32_matrix_dma_timer.c is specialized for the current N32 devboard 5x11 matrix."
+#if MATRIX_ROWS != 5 || MATRIX_COLS != 6
+#    error "n32_matrix_dma_timer.c is specialized for the current N32 devboard 5x6 matrix."
 #endif
 
 #ifndef N32_MATRIX_DMA_COLUMN_US
@@ -56,12 +56,15 @@
 #endif
 
 #ifndef N32_MATRIX_DMA_HW_COLUMNS
-#    define N32_MATRIX_DMA_HW_COLUMNS 1
+#    define N32_MATRIX_DMA_HW_COLUMNS 0
 #endif
 
 #define N32_MATRIX_DMA_COLS MATRIX_COLS
 #define N32_MATRIX_DMA_ROWS MATRIX_ROWS
 #define N32_MATRIX_GPIO_PORT_COUNT 6U
+#define N32_MATRIX_DMA_HW_COLUMNS_DUAL_PORT (N32_MATRIX_DMA_HW_COLUMNS == 1)
+#define N32_MATRIX_DMA_HW_COLUMNS_SINGLE_PORT (N32_MATRIX_DMA_HW_COLUMNS == 2)
+#define N32_MATRIX_DMA_HW_COLUMNS_ENABLED (N32_MATRIX_DMA_HW_COLUMNS != 0)
 
 static const pin_t        n32_row_pins[N32_MATRIX_DMA_ROWS]          = MATRIX_ROW_PINS;
 static const pin_t        n32_col_pins[N32_MATRIX_DMA_COLS]          = MATRIX_COL_PINS;
@@ -72,7 +75,7 @@ uint8_t        n32_get_matrix_dma_release_confirm_frames(void);
 static uint8_t n32_matrix_press_confirm_frames(void);
 static uint8_t n32_matrix_release_confirm_frames(void);
 
-#if !N32_MATRIX_DMA_HW_COLUMNS
+#if !N32_MATRIX_DMA_HW_COLUMNS_ENABLED
 static volatile uint32_t n32_dma_gpioa;
 static volatile uint32_t n32_dma_gpiob;
 static volatile uint32_t n32_dma_gpioc;
@@ -82,6 +85,12 @@ static volatile uint32_t     n32_sample_gpioa[N32_MATRIX_DMA_COLS];
 static volatile uint32_t     n32_sample_gpiob[N32_MATRIX_DMA_COLS];
 static volatile uint32_t     n32_sample_gpioc[N32_MATRIX_DMA_COLS];
 static volatile uint32_t     n32_sample_gpiod[N32_MATRIX_DMA_COLS];
+#if N32_MATRIX_DMA_HW_COLUMNS_ENABLED
+static volatile uint32_t n32_frame_gpioa[N32_MATRIX_DMA_COLS];
+static volatile uint32_t n32_frame_gpiob[N32_MATRIX_DMA_COLS];
+static volatile uint32_t n32_frame_gpioc[N32_MATRIX_DMA_COLS];
+static volatile uint32_t n32_frame_gpiod[N32_MATRIX_DMA_COLS];
+#endif
 static uint8_t               n32_dma_press_counts[N32_MATRIX_DMA_ROWS][N32_MATRIX_DMA_COLS];
 static uint8_t               n32_dma_release_counts[N32_MATRIX_DMA_ROWS][N32_MATRIX_DMA_COLS];
 static volatile matrix_row_t n32_dma_rows[N32_MATRIX_DMA_ROWS];
@@ -95,9 +104,14 @@ static uint16_t              n32_col_masks[N32_MATRIX_DMA_COLS];
 static uint16_t              n32_col_release_masks[N32_MATRIX_GPIO_PORT_COUNT];
 static uint32_t              n32_col_pmode_clear_masks[N32_MATRIX_GPIO_PORT_COUNT];
 static uint32_t              n32_col_pmode_output_bits[N32_MATRIX_GPIO_PORT_COUNT];
-#if N32_MATRIX_DMA_HW_COLUMNS
+#if N32_MATRIX_DMA_HW_COLUMNS_DUAL_PORT
 static uint32_t n32_col_dma_gpioa[N32_MATRIX_DMA_COLS];
 static uint32_t n32_col_dma_gpioc[N32_MATRIX_DMA_COLS];
+#elif N32_MATRIX_DMA_HW_COLUMNS_SINGLE_PORT
+static uint32_t     n32_col_dma_gpio[N32_MATRIX_DMA_COLS];
+static GPIO_Module *n32_col_dma_port;
+static uint8_t      n32_col_dma_port_index;
+static bool         n32_col_dma_valid;
 #endif
 
 #ifdef N32_TRACE_MATRIX
@@ -125,26 +139,34 @@ static void n32_matrix_trace_literal(const char *text) {
 #endif
 }
 
-static uint8_t n32_matrix_sample_bits(uint8_t col) {
+static uint8_t n32_matrix_sample_bits_from(uint8_t col, const volatile uint32_t gpioa[N32_MATRIX_DMA_COLS], const volatile uint32_t gpiob[N32_MATRIX_DMA_COLS], const volatile uint32_t gpioc[N32_MATRIX_DMA_COLS], const volatile uint32_t gpiod[N32_MATRIX_DMA_COLS]) {
     uint8_t bits = 0;
 
-    if ((n32_sample_gpiob[col] & (1UL << 0)) == 0) {
+    if ((gpiob[col] & (1UL << 0)) == 0) {
         bits |= (1U << 0);
     }
-    if ((n32_sample_gpiob[col] & (1UL << 2)) == 0) {
+    if ((gpiob[col] & (1UL << 2)) == 0) {
         bits |= (1U << 1);
     }
-    if ((n32_sample_gpiod[col] & (1UL << 4)) == 0) {
+    if ((gpiod[col] & (1UL << 4)) == 0) {
         bits |= (1U << 2);
     }
-    if ((n32_sample_gpioa[col] & (1UL << 6)) == 0) {
+    if ((gpioa[col] & (1UL << 6)) == 0) {
         bits |= (1U << 3);
     }
-    if ((n32_sample_gpioc[col] & (1UL << 4)) == 0) {
+    if ((gpioc[col] & (1UL << 4)) == 0) {
         bits |= (1U << 4);
     }
 
     return bits;
+}
+
+static uint8_t n32_matrix_sample_bits(uint8_t col) {
+#if N32_MATRIX_DMA_HW_COLUMNS_ENABLED
+    return n32_matrix_sample_bits_from(col, n32_frame_gpioa, n32_frame_gpiob, n32_frame_gpioc, n32_frame_gpiod);
+#else
+    return n32_matrix_sample_bits_from(col, n32_sample_gpioa, n32_sample_gpiob, n32_sample_gpioc, n32_sample_gpiod);
+#endif
 }
 
 static void n32_matrix_trace_event_capture(const matrix_row_t rows[N32_MATRIX_DMA_ROWS]) {
@@ -319,7 +341,7 @@ static void n32_matrix_prepare_col_fastio(void) {
         n32_col_pmode_output_bits[port_index] |= (GPIO_PMODE_OUTPUT << shift);
     }
 
-#if N32_MATRIX_DMA_HW_COLUMNS
+#if N32_MATRIX_DMA_HW_COLUMNS_DUAL_PORT
     for (uint8_t step = 0; step < N32_MATRIX_DMA_COLS; ++step) {
         uint8_t  col        = step + 1U;
         uint32_t gpioa_pbsc = n32_col_release_masks[0];
@@ -337,6 +359,33 @@ static void n32_matrix_prepare_col_fastio(void) {
 
         n32_col_dma_gpioa[step] = gpioa_pbsc;
         n32_col_dma_gpioc[step] = gpioc_pbsc;
+    }
+#elif N32_MATRIX_DMA_HW_COLUMNS_SINGLE_PORT
+    n32_col_dma_valid      = true;
+    n32_col_dma_port_index = n32_matrix_port_index(n32_col_pins[0]);
+    n32_col_dma_port       = n32_gpio_ports[n32_col_dma_port_index];
+
+    for (uint8_t col = 1; col < N32_MATRIX_DMA_COLS; ++col) {
+        if (n32_matrix_port_index(n32_col_pins[col]) != n32_col_dma_port_index) {
+            n32_col_dma_valid = false;
+        }
+    }
+
+    if (n32_col_dma_valid) {
+        uint16_t all_cols_mask = n32_col_release_masks[n32_col_dma_port_index];
+
+        for (uint8_t step = 0; step < N32_MATRIX_DMA_COLS; ++step) {
+            uint8_t col = step + 1U;
+            if (col >= N32_MATRIX_DMA_COLS) {
+                col = 0;
+            }
+            uint16_t selected = n32_col_masks[col];
+            n32_col_dma_gpio[step] = (uint32_t)(all_cols_mask & (uint16_t)~selected) | ((uint32_t)selected << 16);
+        }
+    } else {
+        for (uint8_t step = 0; step < N32_MATRIX_DMA_COLS; ++step) {
+            n32_col_dma_gpio[step] = n32_col_release_masks[n32_col_dma_port_index];
+        }
     }
 #endif
 }
@@ -451,7 +500,7 @@ static void n32_matrix_decode_frame(void) {
     n32_matrix_trace_event_capture(filtered_rows);
 }
 
-#if !N32_MATRIX_DMA_HW_COLUMNS
+#if !N32_MATRIX_DMA_HW_COLUMNS_ENABLED
 static void n32_matrix_store_active_sample(void) {
     int8_t col = (int8_t)n32_dma_active_col + (int8_t)N32_MATRIX_DMA_SAMPLE_PHASE;
 
@@ -472,6 +521,17 @@ static void n32_matrix_store_active_sample(void) {
     n32_sample_gpiob[sample_col] = n32_dma_gpiob;
     n32_sample_gpioc[sample_col] = n32_dma_gpioc;
     n32_sample_gpiod[sample_col] = n32_dma_gpiod;
+}
+#endif
+
+#if N32_MATRIX_DMA_HW_COLUMNS_ENABLED
+static void n32_matrix_capture_frame(void) {
+    for (uint8_t col = 0; col < N32_MATRIX_DMA_COLS; ++col) {
+        n32_frame_gpioa[col] = n32_sample_gpioa[col];
+        n32_frame_gpiob[col] = n32_sample_gpiob[col];
+        n32_frame_gpioc[col] = n32_sample_gpioc[col];
+        n32_frame_gpiod[col] = n32_sample_gpiod[col];
+    }
 }
 #endif
 
@@ -527,13 +587,19 @@ static void n32_matrix_dma_init(void) {
     RCC_EnableAHBPeriphClk(RCC_AHB_PERIPHEN_DMA2, ENABLE);
     DMA_ClrIntPendingBit(DMA_INT_GLB1 | DMA_INT_GLB2 | DMA_INT_GLB3 | DMA_INT_GLB4 | DMA_INT_GLB5 | DMA_INT_GLB6, DMA2);
 
-#if N32_MATRIX_DMA_HW_COLUMNS
+#if N32_MATRIX_DMA_HW_COLUMNS_DUAL_PORT || N32_MATRIX_DMA_HW_COLUMNS_SINGLE_PORT
     n32_matrix_dma_init_channel(DMA2_CH1, DMA_REMAP_ATIM2_CH1, &GPIOA->PID, &n32_sample_gpioa[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
     n32_matrix_dma_init_channel(DMA2_CH2, DMA_REMAP_ATIM2_CH2, &GPIOB->PID, &n32_sample_gpiob[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
     n32_matrix_dma_init_channel(DMA2_CH3, DMA_REMAP_ATIM2_CH3, &GPIOC->PID, &n32_sample_gpioc[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
     n32_matrix_dma_init_channel(DMA2_CH4, DMA_REMAP_ATIM2_CH4, &GPIOD->PID, &n32_sample_gpiod[0], DMA_DIR_PERIPH_SRC, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+#    if N32_MATRIX_DMA_HW_COLUMNS_DUAL_PORT
     n32_matrix_dma_init_channel(DMA2_CH5, DMA_REMAP_ATIM2_UP, &GPIOA->PBSC, &n32_col_dma_gpioa[0], DMA_DIR_PERIPH_DST, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
     n32_matrix_dma_init_channel(DMA2_CH6, DMA_REMAP_ATIM2_UP, &GPIOC->PBSC, &n32_col_dma_gpioc[0], DMA_DIR_PERIPH_DST, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+#    elif N32_MATRIX_DMA_HW_COLUMNS_SINGLE_PORT
+    if (n32_col_dma_valid) {
+        n32_matrix_dma_init_channel(DMA2_CH5, DMA_REMAP_ATIM2_UP, &n32_col_dma_port->PBSC, &n32_col_dma_gpio[0], DMA_DIR_PERIPH_DST, N32_MATRIX_DMA_COLS, DMA_MEM_INC_ENABLE);
+    }
+#    endif
     DMA_ConfigInt(DMA2_CH4, DMA_INT_TXC | DMA_INT_ERR, ENABLE);
 #else
     n32_matrix_dma_init_channel(DMA2_CH1, DMA_REMAP_ATIM2_CH1, &GPIOA->PID, &n32_dma_gpioa, DMA_DIR_PERIPH_SRC, 1, DMA_MEM_INC_DISABLE);
@@ -545,9 +611,13 @@ static void n32_matrix_dma_init(void) {
     DMA_EnableChannel(DMA2_CH2, ENABLE);
     DMA_EnableChannel(DMA2_CH3, ENABLE);
     DMA_EnableChannel(DMA2_CH4, ENABLE);
-#if N32_MATRIX_DMA_HW_COLUMNS
+#if N32_MATRIX_DMA_HW_COLUMNS_DUAL_PORT
     DMA_EnableChannel(DMA2_CH5, ENABLE);
     DMA_EnableChannel(DMA2_CH6, ENABLE);
+#elif N32_MATRIX_DMA_HW_COLUMNS_SINGLE_PORT
+    if (n32_col_dma_valid) {
+        DMA_EnableChannel(DMA2_CH5, ENABLE);
+    }
 #endif
 
     n32_matrix_trace_literal("MATRIX dma_timer dma enabled\n");
@@ -589,7 +659,7 @@ static void n32_matrix_timer_init(void) {
     TIM_SetCnt(ATIM2, 0);
     TIM_ClrIntPendingBit(ATIM2, TIM_INT_UPDATE | TIM_INT_CC1 | TIM_INT_CC2 | TIM_INT_CC3 | TIM_INT_CC4);
 
-#if N32_MATRIX_DMA_HW_COLUMNS
+#if N32_MATRIX_DMA_HW_COLUMNS_ENABLED
     nvic.NVIC_IRQChannel = DMA2_Channel4_IRQn;
 #else
     nvic.NVIC_IRQChannel = ATIM2_UP_IRQn;
@@ -599,7 +669,7 @@ static void n32_matrix_timer_init(void) {
     nvic.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&nvic);
 
-#if N32_MATRIX_DMA_HW_COLUMNS
+#if N32_MATRIX_DMA_HW_COLUMNS_ENABLED
     TIM_ConfigInt(ATIM2, TIM_INT_UPDATE, DISABLE);
     TIM_EnableDma(ATIM2, TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 | TIM_DMA_CC4 | TIM_DMA_UPDATE, ENABLE);
 #else
@@ -668,7 +738,15 @@ void matrix_init_pins(void) {
     n32_matrix_prepare_col_fastio();
 
     n32_dma_active_col = 0;
+#if N32_MATRIX_DMA_HW_COLUMNS_SINGLE_PORT
+    if (n32_col_dma_valid) {
+        n32_matrix_apply_col(0);
+    } else {
+        n32_matrix_apply_col(0);
+    }
+#else
     n32_matrix_apply_col(0);
+#endif
     n32_matrix_dma_init();
     n32_matrix_trace_init();
     n32_matrix_timer_init();
@@ -717,7 +795,7 @@ void matrix_output_unselect_delay(uint8_t line, bool key_pressed) {
     (void)key_pressed;
 }
 
-#if N32_MATRIX_DMA_HW_COLUMNS
+#if N32_MATRIX_DMA_HW_COLUMNS_ENABLED
 void DMA2_Channel4_IRQHandler(void) {
     bool transfer_complete = DMA_GetIntStatus(DMA_INT_TXC4, DMA2) != RESET;
 
@@ -729,6 +807,7 @@ void DMA2_Channel4_IRQHandler(void) {
 
     if (transfer_complete) {
         n32_dma_active_col = 0;
+        n32_matrix_capture_frame();
         n32_matrix_decode_frame();
     }
 }

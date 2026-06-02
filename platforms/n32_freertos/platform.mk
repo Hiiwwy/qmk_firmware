@@ -37,9 +37,11 @@ N32_USB_SPEED := $(strip $(N32_USB_SPEED))
 ifeq ($(N32_USB_SPEED),hs)
     N32_USB_REPORT_RATE_DEFAULT ?= 8000
     N32_USB_SPEED_DEFS := -DN32_USB_USE_HS -DN32_USB_SPEED_HS -DUSE_USB_HS_IN_HS
+    override TARGET := $(TARGET)_HS
 else ifeq ($(N32_USB_SPEED),fs)
     N32_USB_REPORT_RATE_DEFAULT ?= 1000
     N32_USB_SPEED_DEFS := -DN32_USB_USE_FSD -DN32_USB_SPEED_FS
+    override TARGET := $(TARGET)_FS
 else
     $(error N32_USB_SPEED must be hs or fs)
 endif

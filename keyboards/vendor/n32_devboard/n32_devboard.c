@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "quantum.h"
+#include "raw_hid.h"
 #include "usb_driver.h"
 
 #ifdef RGB_MATRIX_ENABLE
@@ -15,7 +16,7 @@
 #ifdef VIA_ENABLE
 #    include "via.h"
 #endif
-#if defined(CONSOLE_ENABLE) && defined(N32_TRACE_RGB)
+#if defined(N32_TRACE_VIA_MATRIX) || (defined(CONSOLE_ENABLE) && defined(N32_TRACE_RGB))
 #    include "SEGGER_RTT.h"
 #endif
 
@@ -91,6 +92,10 @@ static void n32_runtime_config_save(void);
 
 static uint16_t n32_last_keycode;
 static uint32_t n32_keypress_count;
+#if defined(VIA_ENABLE) && defined(N32_TRACE_VIA_MATRIX)
+static matrix_row_t n32_via_matrix_trace_rows[MATRIX_ROWS];
+static bool         n32_via_matrix_trace_seen;
+#endif
 #ifdef RGB_MATRIX_ENABLE
 static bool     n32_rgb_save_pending;
 static uint32_t n32_rgb_save_timer;
@@ -112,6 +117,33 @@ static void n32_rgb_tracef(const char *format, ...) {
 #else
 static void n32_rgb_tracef(const char *format, ...) {
     (void)format;
+}
+#endif
+
+#if defined(VIA_ENABLE) && defined(N32_TRACE_VIA_MATRIX)
+static void n32_via_matrix_trace(uint8_t offset, uint8_t row_count, const matrix_row_t rows[MATRIX_ROWS]) {
+    bool changed = !n32_via_matrix_trace_seen;
+
+    for (uint8_t row = 0; row < row_count && row < MATRIX_ROWS; ++row) {
+        if (n32_via_matrix_trace_rows[row] != rows[row]) {
+            changed = true;
+            break;
+        }
+    }
+    if (!changed) {
+        return;
+    }
+
+    for (uint8_t row = 0; row < row_count && row < MATRIX_ROWS; ++row) {
+        n32_via_matrix_trace_rows[row] = rows[row];
+    }
+    n32_via_matrix_trace_seen = true;
+
+    char buffer[160];
+    int  length = snprintf(buffer, sizeof(buffer), "VIA matrix offset=%u rows=%u state=%03lX/%03lX/%03lX/%03lX/%03lX\n", (unsigned)offset, (unsigned)row_count, (unsigned long)rows[0], (unsigned long)rows[1], (unsigned long)rows[2], (unsigned long)rows[3], (unsigned long)rows[4]);
+    if (length > 0) {
+        SEGGER_RTT_Write(0, buffer, length < (int)sizeof(buffer) ? (unsigned)length : sizeof(buffer) - 1U);
+    }
 }
 #endif
 
@@ -808,11 +840,11 @@ static void n32_tft_next_page(void) {
 #ifdef RGB_MATRIX_ENABLE
 led_config_t g_led_config = {
     {
-        {0, 1, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {0, 1, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
+        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
     },
     {
         {0, 0},
@@ -1076,8 +1108,43 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
 }
 #endif
 
-#if defined(QUANTUM_PAINTER_ENABLE) && defined(VIA_ENABLE)
+#ifdef VIA_ENABLE
 bool via_command_kb(uint8_t *data, uint8_t length) {
+    if (length >= 32 && data[0] == id_get_keyboard_value && data[1] == id_switch_matrix_state) {
+        uint8_t offset = data[2];
+        uint8_t rows   = 28 / ((MATRIX_COLS + 7) / 8);
+        uint8_t i      = 3;
+#    ifdef N32_TRACE_VIA_MATRIX
+        matrix_row_t trace_rows[MATRIX_ROWS] = {0};
+        uint8_t      trace_row_count         = 0;
+#    endif
+
+        for (uint8_t row = 0; row < rows && row + offset < MATRIX_ROWS; row++) {
+            matrix_row_t value = matrix_get_row(row + offset);
+#    ifdef N32_TRACE_VIA_MATRIX
+            trace_rows[row + offset] = value;
+            trace_row_count          = row + offset + 1U;
+#    endif
+#    if (MATRIX_COLS > 24)
+            data[i++] = (value >> 24) & 0xFF;
+#    endif
+#    if (MATRIX_COLS > 16)
+            data[i++] = (value >> 16) & 0xFF;
+#    endif
+#    if (MATRIX_COLS > 8)
+            data[i++] = (value >> 8) & 0xFF;
+#    endif
+            data[i++] = value & 0xFF;
+        }
+
+#    ifdef N32_TRACE_VIA_MATRIX
+        n32_via_matrix_trace(offset, trace_row_count, trace_rows);
+#    endif
+        raw_hid_send(data, length);
+        return true;
+    }
+
+#    ifdef QUANTUM_PAINTER_ENABLE
     if (length < 32 || data[0] != N32_VIA_IMAGE_CMD) {
         return false;
     }
@@ -1139,6 +1206,9 @@ bool via_command_kb(uint8_t *data, uint8_t length) {
     data[2] = status;
     raw_hid_send(data, length);
     return true;
+#    else
+    return false;
+#    endif
 }
 #endif
 
