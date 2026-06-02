@@ -1,3 +1,5 @@
+#include "action.h"
+#include "suspend.h"
 #include "usb_driver.h"
 #include "platform_deps.h"
 #include "print.h"
@@ -18,6 +20,7 @@
 #        undef MIN
 #    endif
 #    include "n32_usbhs_keyboard.h"
+#    include "usbhs_core.h"
 #    include "usbhs_dcd_int.h"
 #    include "usbd_core.h"
 #    include "usbd_desc.h"
@@ -171,6 +174,19 @@ extern __IO uint32_t bDeviceState;
 #endif
 
 void n32_usb_task(void) {
+    if (n32_usb_suspended()) {
+        while (n32_usb_suspended()) {
+            suspend_power_down();
+
+            if (suspend_wakeup_condition() && n32_usb_remote_wakeup_enabled()) {
+                n32_usb_remote_wakeup();
+                clear_keyboard();
+            }
+        }
+
+        suspend_wakeup_init();
+    }
+
 #ifndef N32_USB_SPEED_FS
     n32_usb_hs_flush_shared_report();
 #endif
@@ -265,6 +281,28 @@ uint32_t n32_usb_get_dropped_shared_reports(void) {
 
 uint32_t n32_usb_get_report_slot_timeouts(void) {
     return n32_usb_report_slot_timeouts;
+}
+
+bool n32_usb_suspended(void) {
+#ifdef N32_USB_SPEED_FS
+    return false;
+#else
+    return USB_dev.dev.device_status == USB_SUSPENDED;
+#endif
+}
+
+bool n32_usb_remote_wakeup_enabled(void) {
+#ifdef N32_USB_SPEED_FS
+    return false;
+#else
+    return USB_dev.dev.DevRemoteWakeup != 0;
+#endif
+}
+
+void n32_usb_remote_wakeup(void) {
+#ifndef N32_USB_SPEED_FS
+    USB_ActiveRemoteWakeup(&USB_dev);
+#endif
 }
 
 static void n32_usb_send_shared_report(const void *report, uint8_t length) {

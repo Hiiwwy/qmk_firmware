@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "report.h"
 
@@ -10,6 +11,9 @@ void     n32_usb_set_report_rate_hz(uint16_t hz);
 uint16_t n32_usb_get_report_rate_hz(void);
 uint32_t n32_usb_get_dropped_shared_reports(void);
 uint32_t n32_usb_get_report_slot_timeouts(void);
+bool     n32_usb_suspended(void);
+bool     n32_usb_remote_wakeup_enabled(void);
+void     n32_usb_remote_wakeup(void);
 void     n32_usb_send_keyboard(report_keyboard_t *report);
 void     n32_usb_send_nkro(report_nkro_t *report);
 void     n32_usb_send_mouse(report_mouse_t *report);
