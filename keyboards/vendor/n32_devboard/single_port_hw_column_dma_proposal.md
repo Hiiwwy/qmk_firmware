@@ -1,5 +1,39 @@
 # Single-Port Hardware Column DMA Proposal
 
+## Status
+
+Implemented and validated on the N32 devboard test branch.
+
+Current validated matrix:
+
+```text
+Rows: B0, B2, D4, A6, C4
+Cols: C6, C7, C8, C11, C10, C12
+```
+
+Current default firmware mode:
+
+```make
+N32_MATRIX_DRIVER ?= dma_timer
+N32_MATRIX_DMA_HW_COLUMNS ?= single_port
+N32_MATRIX_DMA_COLUMN_US ?= 11U
+N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES ?= 2U
+N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES ?= 6U
+```
+
+Validated features:
+
+```text
+normal key press/release
+VIA connection
+VIA remap
+VIA macros
+VIA multimedia keys
+VIA matrix tester
+USB HS 8 kHz report mode
+USB remote wakeup
+```
+
 ## Goal
 
 Move matrix column switching from the per-column CPU timer interrupt into a
@@ -65,7 +99,7 @@ The pins do not need to be contiguous or ordered by bit number.
 
 ```text
 Required:
-  COL0..COL10 all on one GPIO port, for example GPIOX
+  all logical columns on one GPIO port, for example GPIOX
 
 Not required:
   contiguous pin numbers
@@ -75,9 +109,9 @@ Not required:
 Rows may remain distributed across multiple GPIO ports, because the row sample
 DMA path already reads GPIOA/B/C/D PID registers.
 
-## Current Design
+## Previous Design
 
-The current stable DMA matrix path uses DMA for row sampling, but CPU still
+The previous stable DMA matrix path used DMA for row sampling, but CPU still
 switches columns on every ATIM2 update interrupt.
 
 ```text
@@ -93,20 +127,20 @@ ATIM2 UPDATE IRQ
     -> CPU decodes frame on wrap
 ```
 
-At 11 us per column and 11 columns:
+At 11 us per column and 6 columns:
 
 ```text
-frame period = 121 us
-frame rate   ~= 8264 Hz
-column IRQs  ~= 90900 per second
+frame period = 66 us
+frame rate   ~= 15151 Hz
+column IRQs  ~= 90909 per second
 ```
 
-## Proposed Design
+## Implemented Design
 
 Precompute a circular DMA table of GPIO PBSC writes:
 
 ```text
-col_pbsc[0..10]
+col_pbsc[0..5]
 ```
 
 Each entry performs the complete column transition for one logical column:
@@ -181,41 +215,35 @@ CPU decodes matrix rows
 
 CPU must not decode a buffer while DMA is overwriting it.
 
-The first implementation should use one of these safe approaches:
+The current implementation uses a shadow copy at the frame boundary:
 
 ```text
-Option A: shadow copy
-  DMA writes circular sample buffers
-  frame-complete IRQ copies 44 words to a shadow buffer
-  CPU decodes the shadow buffer
-
-Option B: double buffer
-  DMA writes buffer 0 while CPU decodes buffer 1
-  buffers swap at frame boundary
+DMA writes circular sample buffers
+DMA frame complete interrupt copies the completed frame
+CPU decodes the copied frame
 ```
 
-Option A is simpler for initial validation. Option B is cleaner if the
-hardware/DMA model supports it without extra complexity.
+This keeps decode from racing with DMA writes while staying simple enough for
+initial hardware validation.
 
 ## Mode Selection
 
-Keep the current stable path as a fallback.
+Keep the previous stable path as a fallback.
 
-Suggested build-time modes:
+Build-time modes:
 
 ```make
-N32_MATRIX_DMA_HW_COLUMNS ?= no
+N32_MATRIX_DMA_HW_COLUMNS ?= single_port
 ```
 
-Potential future values:
+Supported values:
 
 ```text
 no           current stable CPU column switch path
 single_port  new single-port hardware column DMA path
 ```
 
-The existing stable path should remain available until the new path is proven
-with physical hardware.
+The CPU column switch path remains available for rollback.
 
 ## Validation Plan
 
@@ -233,6 +261,8 @@ the pattern repeats at the configured column period
 
 Use RTT, a logic analyzer, or a scope.
 
+Status: completed.
+
 ### Phase 2: Row Sample Alignment
 
 Enable row sample DMA, but keep decode instrumentation simple.
@@ -243,6 +273,8 @@ Expected observation:
 sample[0..10] changes only in the slot corresponding to the active key column
 pressing one key does not affect unrelated column slots
 ```
+
+Status: completed.
 
 ### Phase 3: Frame Decode
 
@@ -258,6 +290,8 @@ fast repeated taps
 VIA matrix tester
 VIA remap, macro, and media keys
 ```
+
+Status: completed.
 
 ### Phase 4: Performance Comparison
 
@@ -275,32 +309,43 @@ missed keys
 ghosting or stuck keys
 ```
 
-## Expected Benefit
+Status: in progress.
 
-The current stable path generates one column IRQ per column:
+Next test steps:
 
 ```text
-8264 frames/s * 11 columns ~= 90900 IRQ/s
+11 us/col: validated baseline
+10 us/col: next conservative test
+8 us/col: next target if 10 us is stable
 ```
 
-The proposed path should reduce that to approximately one frame event per
+## Expected Benefit
+
+The previous stable path generated one column IRQ per column:
+
+```text
+15151 frames/s * 6 columns ~= 90909 IRQ/s
+```
+
+The single-port DMA path reduces that to approximately one frame event per
 matrix frame:
 
 ```text
-8264 frame events/s
+15151 frame events/s
 ```
 
 Expected impact:
 
 ```text
-IRQ count reduction: about 91 percent
-CPU headroom gain: estimated 8 to 15 percent
-matrix frame rate: initially unchanged at about 8.26 kHz
+IRQ count reduction: about 83 percent
+CPU headroom gain: validated by lower matrix CPU time
+matrix frame rate: about 15.15 kHz at 11 us/col
 timing jitter: lower, because column select is timer/DMA-driven
 ```
 
-The first target is not a higher scan rate. The first target is lower CPU load
-and more deterministic column timing at the existing 11 us column period.
+The first target was lower CPU load and more deterministic column timing at the
+validated column period. The next target is finding the lowest stable column
+period.
 
 ## Risks
 
@@ -337,8 +382,8 @@ reset selected column bit
 
 ### Frame Consistency
 
-DMA may begin the next frame before CPU decode finishes. Use shadow copy or
-double buffering to prevent mixed-frame reads.
+DMA may begin the next frame before CPU decode finishes. The current shadow copy
+keeps decode on a completed frame.
 
 ### Hardware Pin Conflicts
 
@@ -347,20 +392,17 @@ pins, WS2812, TFT/SPI, and row pins.
 
 ## Open Questions
 
-1. Which GPIO port will host all 11 column pins?
-2. Which exact pins map to COL0..COL10?
-3. Should the first implementation use shadow copy or double buffer?
-4. Should the experimental mode be named `single_port` instead of overloading
-   `N32_MATRIX_DMA_HW_COLUMNS=yes`?
-5. Should diagnostics be exposed through RTT only, or also through VIA custom
-   values?
+1. What is the lowest stable `N32_MATRIX_DMA_COLUMN_US` value?
+2. Should the validated production default remain 11 us, or move to 10/8 us
+   after testing?
+3. Should performance diagnostics stay build-time only, or be exposed through
+   VIA custom values?
 
 ## Proposed First Implementation Scope
 
 Do not replace the current stable path immediately.
 
-First implementation should add an experimental single-port hardware column
-DMA mode with:
+The implemented first scope added single-port hardware column DMA mode with:
 
 ```text
 single GPIO port column DMA table
@@ -371,9 +413,8 @@ RTT diagnostics for column POD and DMA counters
 build-time fallback to current CPU column switching
 ```
 
-After the diagnostic mode proves correct on hardware, connect it to the normal
-matrix decode/filter path.
+The diagnostic mode has been connected to the normal matrix decode/filter path.
 
-Implementation scope must remain limited to the N32-owned keyboard/platform
-files. Any design that requires changing QMK core should be rejected or
+Implementation scope remains limited to the N32-owned keyboard/platform files.
+Any future design that requires changing QMK core should be rejected or
 redesigned before implementation.
