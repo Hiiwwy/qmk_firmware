@@ -57,9 +57,11 @@
 
 #define N32_MATRIX_DMA_COLS MATRIX_COLS
 #define N32_MATRIX_DMA_ROWS MATRIX_ROWS
+#define N32_MATRIX_GPIO_PORT_COUNT 6U
 
-static const pin_t n32_row_pins[N32_MATRIX_DMA_ROWS] = MATRIX_ROW_PINS;
-static const pin_t n32_col_pins[N32_MATRIX_DMA_COLS] = MATRIX_COL_PINS;
+static const pin_t        n32_row_pins[N32_MATRIX_DMA_ROWS]          = MATRIX_ROW_PINS;
+static const pin_t        n32_col_pins[N32_MATRIX_DMA_COLS]          = MATRIX_COL_PINS;
+static GPIO_Module *const n32_gpio_ports[N32_MATRIX_GPIO_PORT_COUNT] = {GPIOA, GPIOB, GPIOC, GPIOD, GPIOE, GPIOF};
 
 uint8_t        n32_get_matrix_dma_press_confirm_frames(void);
 uint8_t        n32_get_matrix_dma_release_confirm_frames(void);
@@ -82,6 +84,11 @@ static volatile uint8_t      n32_dma_samples[N32_MATRIX_DMA_COLS];
 static volatile uint32_t     n32_dma_frame_generation;
 static volatile uint32_t     n32_dma_frame_count;
 static volatile uint8_t      n32_dma_active_col;
+static GPIO_Module          *n32_col_ports[N32_MATRIX_DMA_COLS];
+static uint16_t              n32_col_masks[N32_MATRIX_DMA_COLS];
+static uint16_t              n32_col_release_masks[N32_MATRIX_GPIO_PORT_COUNT];
+static uint32_t              n32_col_pmode_clear_masks[N32_MATRIX_GPIO_PORT_COUNT];
+static uint32_t              n32_col_pmode_output_bits[N32_MATRIX_GPIO_PORT_COUNT];
 
 #ifdef N32_TRACE_MATRIX
 static uint32_t n32_dma_trace_timer;
@@ -245,6 +252,25 @@ static uint16_t n32_matrix_mask(pin_t pin) {
     return (uint16_t)(1U << N32_PIN_INDEX(pin));
 }
 
+static uint8_t n32_matrix_port_index(pin_t pin) {
+    switch (N32_PIN_PORT(pin)) {
+        case N32_PORT_A:
+            return 0;
+        case N32_PORT_B:
+            return 1;
+        case N32_PORT_C:
+            return 2;
+        case N32_PORT_D:
+            return 3;
+        case N32_PORT_E:
+            return 4;
+        case N32_PORT_F:
+            return 5;
+        default:
+            return 0;
+    }
+}
+
 static inline void n32_matrix_wait_cycles(uint32_t cycles) {
     uint32_t start = DWT->CYCCNT;
 
@@ -264,14 +290,36 @@ static void n32_matrix_gpio_input_pullup(pin_t pin) {
     GPIO_InitPeripheral(n32_matrix_port(pin), &init);
 }
 
-static void n32_matrix_release_all_cols(void) {
-    for (uint8_t col = 0; col < N32_MATRIX_DMA_COLS; ++col) {
-        GPIO_Module *port  = n32_matrix_port(n32_col_pins[col]);
-        uint16_t     mask  = n32_matrix_mask(n32_col_pins[col]);
-        uint32_t     shift = (uint32_t)N32_PIN_INDEX(n32_col_pins[col]) * 2U;
+static void n32_matrix_prepare_col_fastio(void) {
+    for (uint8_t port = 0; port < N32_MATRIX_GPIO_PORT_COUNT; ++port) {
+        n32_col_release_masks[port]     = 0;
+        n32_col_pmode_clear_masks[port] = 0;
+        n32_col_pmode_output_bits[port] = 0;
+    }
 
-        port->PBSC  = mask;
-        port->PMODE = (port->PMODE & ~(GPIO_PMODE_BIT_MASK << shift)) | (GPIO_PMODE_OUTPUT << shift);
+    for (uint8_t col = 0; col < N32_MATRIX_DMA_COLS; ++col) {
+        uint8_t  port_index = n32_matrix_port_index(n32_col_pins[col]);
+        uint16_t mask       = n32_matrix_mask(n32_col_pins[col]);
+        uint32_t shift      = (uint32_t)N32_PIN_INDEX(n32_col_pins[col]) * 2U;
+
+        n32_col_ports[col] = n32_gpio_ports[port_index];
+        n32_col_masks[col] = mask;
+        n32_col_release_masks[port_index] |= mask;
+        n32_col_pmode_clear_masks[port_index] |= (GPIO_PMODE_BIT_MASK << shift);
+        n32_col_pmode_output_bits[port_index] |= (GPIO_PMODE_OUTPUT << shift);
+    }
+}
+
+static void n32_matrix_release_all_cols(void) {
+    for (uint8_t port_index = 0; port_index < N32_MATRIX_GPIO_PORT_COUNT; ++port_index) {
+        uint16_t mask = n32_col_release_masks[port_index];
+
+        if (mask != 0) {
+            GPIO_Module *port = n32_gpio_ports[port_index];
+
+            port->PBSC  = mask;
+            port->PMODE = (port->PMODE & ~n32_col_pmode_clear_masks[port_index]) | n32_col_pmode_output_bits[port_index];
+        }
     }
 }
 
@@ -280,12 +328,7 @@ static void n32_matrix_apply_col(uint8_t col) {
     n32_matrix_wait_cycles(N32_MATRIX_DMA_SWITCH_DEAD_CYCLES);
 
     if (col < N32_MATRIX_DMA_COLS) {
-        GPIO_Module *port  = n32_matrix_port(n32_col_pins[col]);
-        uint32_t     mask  = n32_matrix_mask(n32_col_pins[col]);
-        uint32_t     shift = (uint32_t)N32_PIN_INDEX(n32_col_pins[col]) * 2U;
-
-        port->PMODE = (port->PMODE & ~(GPIO_PMODE_BIT_MASK << shift)) | (GPIO_PMODE_OUTPUT << shift);
-        port->PBC   = mask;
+        n32_col_ports[col]->PBC = n32_col_masks[col];
     }
 }
 
@@ -567,6 +610,7 @@ void matrix_init_pins(void) {
     for (uint8_t col = 0; col < N32_MATRIX_DMA_COLS; ++col) {
         n32_matrix_gpio_input_pullup(n32_col_pins[col]);
     }
+    n32_matrix_prepare_col_fastio();
 
     n32_dma_active_col = 0;
     n32_matrix_apply_col(0);
