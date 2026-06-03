@@ -12,6 +12,11 @@
 #else
 #    define n32_usbhs_trace(...) ((void)0)
 #endif
+#if defined(CONSOLE_ENABLE) && defined(N32_TRACE_USB_REPORT_RATE)
+#    define n32_usb_report_rate_trace(...) xprintf(__VA_ARGS__)
+#else
+#    define n32_usb_report_rate_trace(...) ((void)0)
+#endif
 
 #ifdef N32_USB_SPEED_FS
 #    include "n32_usbfsd_keyboard.h"
@@ -65,6 +70,9 @@ static uint32_t n32_usb_last_shared_tx_cycle;
 static uint32_t n32_usb_dropped_shared_reports;
 static uint32_t n32_usb_report_slot_timeouts;
 static bool     n32_usb_cycle_counter_ready;
+#ifndef N32_USB_SPEED_FS
+static volatile uint8_t n32_usb_report_slot_force_ready;
+#endif
 
 #ifndef N32_USB_SPEED_FS
 static void n32_usbhs_config_clk(void) {
@@ -104,6 +112,31 @@ static void n32_usb_update_report_interval(void) {
     n32_usb_report_interval_cycles = cycles_per_second / n32_usb_report_rate_hz;
 }
 
+#ifndef N32_USB_SPEED_FS
+static bool n32_usb_shared_report_slot_ready(void) {
+    if (n32_usb_report_slot_force_ready) {
+        return true;
+    }
+
+    if (n32_usb_report_interval_cycles == 0 || !n32_usb_cycle_counter_ready || (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) == 0) {
+        return true;
+    }
+
+    uint32_t now = DWT->CYCCNT;
+
+    return (uint32_t)(now - n32_usb_last_shared_tx_cycle) >= n32_usb_report_interval_cycles;
+}
+
+static void n32_usb_mark_shared_report_tx(void) {
+    n32_usb_report_slot_force_ready = 0;
+
+    if (n32_usb_cycle_counter_ready && (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) != 0) {
+        n32_usb_last_shared_tx_cycle = DWT->CYCCNT;
+    }
+}
+#endif
+
+#ifdef N32_USB_SPEED_FS
 static void n32_usb_wait_report_slot(void) {
     if (n32_usb_report_interval_cycles == 0 || !n32_usb_cycle_counter_ready || (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) == 0) {
         return;
@@ -122,10 +155,11 @@ static void n32_usb_wait_report_slot(void) {
 
     n32_usb_last_shared_tx_cycle = now;
 }
+#endif
 
 #ifndef N32_USB_SPEED_FS
 static void n32_usb_hs_start_shared_tx(const void *report, uint8_t length) {
-    n32_usb_wait_report_slot();
+    n32_usb_mark_shared_report_tx();
     memcpy(hs_shared_report, report, length);
     hs_shared_prev_xfer_complete = 0;
     USBDEV_EP_Tx(&USB_dev, N32_USBHS_HID_IN_EP, hs_shared_report, length);
@@ -146,6 +180,10 @@ static void n32_usb_hs_queue_shared_report(const void *report, uint8_t length) {
 
 static void n32_usb_hs_flush_shared_report(void) {
     if (USB_dev.dev.device_status != USB_CONFIGURED || !hs_shared_prev_xfer_complete || !hs_shared_report_pending) {
+        return;
+    }
+
+    if (!n32_usb_shared_report_slot_ready()) {
         return;
     }
 
@@ -269,6 +307,16 @@ void n32_usb_set_report_rate_hz(uint16_t hz) {
 #endif
 
     n32_usb_update_report_interval();
+#ifndef N32_USB_SPEED_FS
+    n32_usb_report_slot_force_ready = 1;
+#endif
+    n32_usb_report_rate_trace("USB report rate: hz=%u interval_cycles=%lu force=%u\n", n32_usb_report_rate_hz, (unsigned long)n32_usb_report_interval_cycles,
+#ifdef N32_USB_SPEED_FS
+                              0U
+#else
+                              (unsigned)n32_usb_report_slot_force_ready
+#endif
+    );
 }
 
 uint16_t n32_usb_get_report_rate_hz(void) {
@@ -316,9 +364,14 @@ static void n32_usb_send_shared_report(const void *report, uint8_t length) {
         return;
     }
 
-    if (!hs_shared_prev_xfer_complete || hs_shared_report_pending) {
+    if (!hs_shared_prev_xfer_complete || !n32_usb_shared_report_slot_ready()) {
         n32_usb_hs_queue_shared_report(report, length);
         return;
+    }
+
+    if (hs_shared_report_pending) {
+        hs_shared_report_pending = 0;
+        n32_usb_dropped_shared_reports++;
     }
 
     n32_usb_hs_start_shared_tx(report, length);
