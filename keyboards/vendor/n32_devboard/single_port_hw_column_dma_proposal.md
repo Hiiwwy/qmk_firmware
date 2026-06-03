@@ -16,7 +16,7 @@ Current default firmware mode:
 ```make
 N32_MATRIX_DRIVER ?= dma_timer
 N32_MATRIX_DMA_HW_COLUMNS ?= single_port
-N32_MATRIX_DMA_COLUMN_US ?= 8U
+N32_MATRIX_DMA_COLUMN_US ?= 9U
 N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES ?= 2U
 N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES ?= 6U
 ```
@@ -309,16 +309,44 @@ missed keys
 ghosting or stuck keys
 ```
 
-Status: in progress.
+Status: completed for the current 5x6 validation matrix.
 
 Next test steps:
 
 ```text
 11 us/col: validated baseline
 10 us/col: validated
-8 us/col: validated production candidate
+9 us/col: validated production candidate
+8 us/col: single-key passed, multi-key crosstalk risk observed
 7 us/col: failed, key chatter/crosstalk observed
 6 us/col: failed, key chatter/crosstalk observed
+```
+
+Additional multi-key validation:
+
+```text
+8 us/col, press=2, release=6:
+  single-key testing passed
+  multi-key testing showed key chatter/crosstalk risk
+
+8 us/col, press=3, release=7:
+  multi-key crosstalk still observed
+  increasing confirmation frames did not resolve the raw sampling issue
+
+9 us/col, press=2, release=6:
+  simultaneous 5-column press passed on the current 5x6 test matrix
+
+9 us/col, press=1, release=4:
+  simultaneous 5-column press passed on the current 5x6 test matrix
+```
+
+Current validation limit:
+
+```text
+The current test keyboard has only 6 columns.
+The multi-key stress result can confirm simultaneous 5-column operation only.
+It should not be treated as proof for larger column counts without testing on
+the target matrix.
 ```
 
 ## Expected Benefit
@@ -341,12 +369,13 @@ Expected impact:
 ```text
 IRQ count reduction: about 83 percent
 CPU headroom gain: validated by lower matrix CPU time
-matrix frame rate: about 20.83 kHz at 8 us/col
+matrix frame rate: about 18.52 kHz at 9 us/col
 timing jitter: lower, because column select is timer/DMA-driven
 ```
 
 The first target was lower CPU load and more deterministic column timing at the
-validated column period. The validated production candidate is 8 us/col.
+validated column period. The validated production candidate is 9 us/col for
+the current 5x6 validation matrix.
 
 ## Risks
 
@@ -393,10 +422,9 @@ pins, WS2812, TFT/SPI, and row pins.
 
 ## Open Questions
 
-1. What is the lowest stable `N32_MATRIX_DMA_COLUMN_US` value?
-2. Should the validated production default remain 11 us, or move to 10/8 us
-   after testing?
-3. Should performance diagnostics stay build-time only, or be exposed through
+1. Should the validated production default remain 9 us on larger target
+   matrices, or should larger column counts use a more conservative period?
+2. Should performance diagnostics stay build-time only, or be exposed through
    VIA custom values?
 
 ## Proposed First Implementation Scope

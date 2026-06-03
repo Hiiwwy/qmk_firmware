@@ -194,6 +194,25 @@ static void n32_matrix_trace_event_capture(const matrix_row_t rows[N32_MATRIX_DM
 #endif
 }
 
+#ifdef N32_TRACE_MATRIX_EVENT
+static uint8_t n32_matrix_trace_pressed_cols(const matrix_row_t rows[N32_MATRIX_DMA_ROWS]) {
+    matrix_row_t pressed_cols = 0;
+
+    for (uint8_t row = 0; row < N32_MATRIX_DMA_ROWS; ++row) {
+        pressed_cols |= rows[row];
+    }
+
+    uint8_t count = 0;
+    for (uint8_t col = 0; col < N32_MATRIX_DMA_COLS; ++col) {
+        if ((pressed_cols & ((matrix_row_t)1U << col)) != 0) {
+            count++;
+        }
+    }
+
+    return count;
+}
+#endif
+
 static void n32_matrix_trace_event_flush(void) {
 #ifdef N32_TRACE_MATRIX_EVENT
     if (!n32_dma_event_pending) {
@@ -216,7 +235,7 @@ static void n32_matrix_trace_event_flush(void) {
     __enable_irq();
 
     char buffer[256];
-    int  offset = snprintf(buffer, sizeof(buffer), "MATRIX event rows=%03lX/%03lX/%03lX/%03lX/%03lX active=%u s=", (unsigned long)rows[0], (unsigned long)rows[1], (unsigned long)rows[2], (unsigned long)rows[3], (unsigned long)rows[4], (unsigned)active_col);
+    int  offset = snprintf(buffer, sizeof(buffer), "MATRIX event rows=%03lX/%03lX/%03lX/%03lX/%03lX pc=%u active=%u s=", (unsigned long)rows[0], (unsigned long)rows[1], (unsigned long)rows[2], (unsigned long)rows[3], (unsigned long)rows[4], (unsigned)n32_matrix_trace_pressed_cols(rows), (unsigned)active_col);
 
     for (uint8_t col = 0; col < N32_MATRIX_DMA_COLS && offset > 0 && offset < (int)sizeof(buffer); ++col) {
         offset += snprintf(buffer + offset, sizeof(buffer) - offset, "%02X", (unsigned)samples[col]);
