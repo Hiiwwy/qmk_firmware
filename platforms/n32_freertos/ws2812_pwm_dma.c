@@ -36,13 +36,15 @@
 #endif
 
 #define N32_WS2812_RESET_SLOTS (((WS2812_TRST_US * 1000U) + WS2812_TIMING - 1U) / WS2812_TIMING + 1U)
+#define N32_WS2812_LEADING_RESET_SLOTS N32_WS2812_RESET_SLOTS
+#define N32_WS2812_TRAILING_RESET_SLOTS N32_WS2812_RESET_SLOTS
 #ifdef WS2812_RGBW
 #    define N32_WS2812_BYTES_PER_LED 4U
 #else
 #    define N32_WS2812_BYTES_PER_LED 3U
 #endif
 #define N32_WS2812_BITS_PER_LED (N32_WS2812_BYTES_PER_LED * 8U)
-#define N32_WS2812_PWM_BUFFER_LEN ((WS2812_LED_COUNT * N32_WS2812_BITS_PER_LED) + N32_WS2812_RESET_SLOTS)
+#define N32_WS2812_PWM_BUFFER_LEN ((WS2812_LED_COUNT * N32_WS2812_BITS_PER_LED) + N32_WS2812_LEADING_RESET_SLOTS + N32_WS2812_TRAILING_RESET_SLOTS)
 
 static uint16_t      ws2812_pwm_buffer[N32_WS2812_PWM_BUFFER_LEN];
 static volatile bool ws2812_dma_busy;
@@ -172,6 +174,10 @@ static uint16_t n32_ws2812_build_pwm_buffer(void) {
     uint16_t  t0h    = n32_ws2812_pulse_from_ns(WS2812_T0H);
     uint16_t  t1h    = n32_ws2812_pulse_from_ns(WS2812_T1H);
 
+    for (uint16_t i = 0; i < N32_WS2812_LEADING_RESET_SLOTS; ++i) {
+        *cursor++ = 0;
+    }
+
     for (int i = 0; i < WS2812_LED_COUNT; ++i) {
 #if (WS2812_BYTE_ORDER == WS2812_BYTE_ORDER_GRB)
         n32_ws2812_encode_byte(&cursor, ws2812_leds[i].g, t0h, t1h);
@@ -191,7 +197,7 @@ static uint16_t n32_ws2812_build_pwm_buffer(void) {
 #endif
     }
 
-    for (uint16_t i = 0; i < N32_WS2812_RESET_SLOTS; ++i) {
+    for (uint16_t i = 0; i < N32_WS2812_TRAILING_RESET_SLOTS; ++i) {
         *cursor++ = 0;
     }
 
@@ -245,7 +251,7 @@ void ws2812_init(void) {
     n32_ws2812_gpio_init();
     n32_ws2812_timer_init(period, 0);
     n32_ws2812_dma_init();
-    n32_ws2812_tracef("RGB ws2812 pwm_dma init: pin=%s count=%u period=%u t0=%u t1=%u reset_slots=%u\n", N32_WS2812_DI_PIN_NAME, (unsigned)WS2812_LED_COUNT, (unsigned)period, (unsigned)t0h, (unsigned)n32_ws2812_pulse_from_ns(WS2812_T1H), (unsigned)N32_WS2812_RESET_SLOTS);
+    n32_ws2812_tracef("RGB ws2812 pwm_dma init: pin=%s count=%u period=%u t0=%u t1=%u reset_slots=%u/%u\n", N32_WS2812_DI_PIN_NAME, (unsigned)WS2812_LED_COUNT, (unsigned)period, (unsigned)t0h, (unsigned)n32_ws2812_pulse_from_ns(WS2812_T1H), (unsigned)N32_WS2812_LEADING_RESET_SLOTS, (unsigned)N32_WS2812_TRAILING_RESET_SLOTS);
 }
 
 void ws2812_set_color(int index, uint8_t red, uint8_t green, uint8_t blue) {

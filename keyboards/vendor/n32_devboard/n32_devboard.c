@@ -28,7 +28,7 @@
 #    endif
 #endif
 
-#define N32_CONFIG_MAGIC 0xAB
+#define N32_CONFIG_MAGIC 0xAE
 #if N32_USB_REPORT_RATE_DEFAULT == 1000
 #    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 0
 #elif N32_USB_REPORT_RATE_DEFAULT == 2000
@@ -54,6 +54,15 @@
 #define N32_CONFIG_MAX_DMA_PRESS_FRAMES 8
 #define N32_CONFIG_MIN_DMA_RELEASE_FRAMES 4
 #define N32_CONFIG_MAX_DMA_RELEASE_FRAMES 32
+#define N32_RGB_ZONE_AXIS 0
+#define N32_RGB_ZONE_UNDERGLOW 1
+#define N32_RGB_ZONE_INDICATOR 2
+#define N32_RGB_ZONE_COUNT 3
+#define N32_RGB_MODE_OFF 0
+#define N32_RGB_MODE_SOLID 1
+#define N32_RGB_AXIS_LED_COUNT 6
+#define N32_RGB_UNDERGLOW_LED_COUNT 4
+#define N32_RGB_INDICATOR_LED_INDEX 1
 
 enum n32_via_value_id {
     id_n32_report_rate        = 1,
@@ -67,7 +76,18 @@ enum n32_via_value_id {
     id_n32_rgb_zone           = 9,
     id_n32_dma_press_frames   = 10,
     id_n32_dma_release_frames = 11,
+    id_n32_rgb_underglow_enable = 12,
+    id_n32_rgb_indicator_enable = 13,
 };
+
+typedef struct {
+    uint8_t enable;
+    uint8_t mode;
+    uint8_t hue;
+    uint8_t sat;
+    uint8_t val;
+    uint8_t speed;
+} n32_rgb_zone_config_t;
 
 typedef struct {
     uint8_t magic;
@@ -76,6 +96,8 @@ typedef struct {
     uint8_t dma_press_frames;
     uint8_t dma_release_frames;
     uint8_t reserved;
+    uint8_t rgb_selected_zone;
+    n32_rgb_zone_config_t rgb_zone[N32_RGB_ZONE_COUNT];
 } n32_runtime_config_t;
 
 static n32_runtime_config_t n32_config = {
@@ -85,6 +107,33 @@ static n32_runtime_config_t n32_config = {
     .dma_press_frames   = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES,
     .dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES,
     .reserved           = 0,
+    .rgb_selected_zone  = N32_RGB_ZONE_AXIS,
+    .rgb_zone = {
+        [N32_RGB_ZONE_AXIS] = {
+            .enable = 1,
+            .mode   = 1,
+            .hue    = RGB_MATRIX_DEFAULT_HUE,
+            .sat    = RGB_MATRIX_DEFAULT_SAT,
+            .val    = RGB_MATRIX_DEFAULT_VAL,
+            .speed  = RGB_MATRIX_DEFAULT_SPD,
+        },
+        [N32_RGB_ZONE_UNDERGLOW] = {
+            .enable = 1,
+            .mode   = 2,
+            .hue    = RGB_MATRIX_DEFAULT_HUE,
+            .sat    = RGB_MATRIX_DEFAULT_SAT,
+            .val    = RGB_MATRIX_DEFAULT_VAL,
+            .speed  = RGB_MATRIX_DEFAULT_SPD,
+        },
+        [N32_RGB_ZONE_INDICATOR] = {
+            .enable = 1,
+            .mode   = 1,
+            .hue    = 0,
+            .sat    = 255,
+            .val    = RGB_MATRIX_DEFAULT_VAL,
+            .speed  = RGB_MATRIX_DEFAULT_SPD,
+        },
+    },
 };
 static bool n32_runtime_config_needs_save;
 
@@ -178,46 +227,112 @@ static uint8_t n32_via_rgb_mode_to_qmk(uint8_t mode) {
     }
 }
 
-static uint8_t n32_qmk_rgb_mode_to_via(uint8_t mode) {
-    switch (mode) {
-        case RGB_MATRIX_BREATHING:
-            return 2;
-        case RGB_MATRIX_CYCLE_ALL:
-            return 3;
-        case RGB_MATRIX_CYCLE_LEFT_RIGHT:
-            return 4;
-        case RGB_MATRIX_HUE_BREATHING:
-            return 5;
-        case RGB_MATRIX_RAINBOW_MOVING_CHEVRON:
-            return 6;
-        case RGB_MATRIX_SOLID_REACTIVE_SIMPLE:
-            return 7;
-        case RGB_MATRIX_SOLID_COLOR:
-        default:
-            return 1;
+static void n32_rgb_mark_save_pending(void) {
+    n32_rgb_save_pending          = true;
+    n32_runtime_config_needs_save = true;
+    n32_rgb_save_timer            = timer_read32();
+}
+
+static uint8_t n32_rgb_zone_value(uint8_t value) {
+    return value > RGB_MATRIX_MAXIMUM_BRIGHTNESS ? RGB_MATRIX_MAXIMUM_BRIGHTNESS : value;
+}
+
+static rgb_t n32_rgb_zone_rgb(const n32_rgb_zone_config_t *zone) {
+    hsv_t hsv = {
+        .h = zone->hue,
+        .s = zone->sat,
+        .v = n32_rgb_zone_value(zone->val),
+    };
+
+    return hsv_to_rgb(hsv);
+}
+
+static void n32_rgb_sanitize_zone(n32_rgb_zone_config_t *zone) {
+    zone->enable = zone->enable ? 1 : 0;
+    if (zone->mode > 7) {
+        zone->mode = N32_RGB_MODE_SOLID;
+    }
+    zone->val = n32_rgb_zone_value(zone->val);
+}
+
+static void n32_rgb_apply_axis_to_qmk(void) {
+    const n32_rgb_zone_config_t *axis = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+
+    rgb_matrix_set_flags_noeeprom(LED_FLAG_ALL);
+    rgb_matrix_enable_noeeprom();
+
+    if (axis->mode > N32_RGB_MODE_OFF) {
+        rgb_matrix_mode_noeeprom(n32_via_rgb_mode_to_qmk(axis->mode));
+        rgb_matrix_sethsv_noeeprom(axis->hue, axis->sat, n32_rgb_zone_value(axis->val));
+        rgb_matrix_set_speed_noeeprom(axis->speed);
     }
 }
 
-static void n32_rgb_mark_save_pending(void) {
-    n32_rgb_save_pending = true;
-    n32_rgb_save_timer   = timer_read32();
+static void n32_rgb_set_led_range(uint8_t first, uint8_t count, rgb_t color) {
+    for (uint8_t i = 0; i < count && first + i < RGB_MATRIX_LED_COUNT; ++i) {
+        rgb_matrix_set_color(first + i, color.r, color.g, color.b);
+    }
 }
 
-static void n32_rgb_turn_off_now(void) {
-    rgb_matrix_disable_noeeprom();
-    rgb_matrix_set_color_all(0, 0, 0);
-    rgb_matrix_driver.flush();
+static void n32_rgb_apply_zone_postprocess(void) {
+    const n32_rgb_zone_config_t *axis      = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+    const n32_rgb_zone_config_t *underglow = &n32_config.rgb_zone[N32_RGB_ZONE_UNDERGLOW];
+    const n32_rgb_zone_config_t *indicator = &n32_config.rgb_zone[N32_RGB_ZONE_INDICATOR];
+    rgb_t                        black     = {0, 0, 0};
+
+    if (!axis->enable || axis->mode == N32_RGB_MODE_OFF) {
+        n32_rgb_set_led_range(0, N32_RGB_AXIS_LED_COUNT, black);
+    }
+
+    if (axis->mode == N32_RGB_MODE_OFF || !underglow->enable) {
+        n32_rgb_set_led_range(N32_RGB_AXIS_LED_COUNT, N32_RGB_UNDERGLOW_LED_COUNT, black);
+    }
+
+    led_t led_state = host_keyboard_led_state();
+    if (led_state.caps_lock && indicator->enable && indicator->mode != N32_RGB_MODE_OFF && N32_RGB_INDICATOR_LED_INDEX < RGB_MATRIX_LED_COUNT) {
+        rgb_t color = n32_rgb_zone_rgb(indicator);
+        rgb_matrix_set_color(N32_RGB_INDICATOR_LED_INDEX, color.r, color.g, color.b);
+    }
 }
 #endif
 
 static void n32_runtime_config_sanitize(void) {
     if (n32_config.magic != N32_CONFIG_MAGIC) {
-        n32_config.magic              = N32_CONFIG_MAGIC;
-        n32_config.report_rate_index  = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX;
-        n32_config.debounce_ms        = N32_CONFIG_DEFAULT_DEBOUNCE_MS;
-        n32_config.dma_press_frames   = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES;
-        n32_config.dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES;
-        n32_config.reserved           = 0;
+        n32_config = (n32_runtime_config_t){
+            .magic              = N32_CONFIG_MAGIC,
+            .report_rate_index  = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX,
+            .debounce_ms        = N32_CONFIG_DEFAULT_DEBOUNCE_MS,
+            .dma_press_frames   = N32_MATRIX_DMA_PRESS_CONFIRM_FRAMES,
+            .dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES,
+            .reserved           = 0,
+            .rgb_selected_zone  = N32_RGB_ZONE_AXIS,
+            .rgb_zone = {
+                [N32_RGB_ZONE_AXIS] = {
+                    .enable = 1,
+                    .mode   = 1,
+                    .hue    = RGB_MATRIX_DEFAULT_HUE,
+                    .sat    = RGB_MATRIX_DEFAULT_SAT,
+                    .val    = RGB_MATRIX_DEFAULT_VAL,
+                    .speed  = RGB_MATRIX_DEFAULT_SPD,
+                },
+                [N32_RGB_ZONE_UNDERGLOW] = {
+                    .enable = 1,
+                    .mode   = 2,
+                    .hue    = RGB_MATRIX_DEFAULT_HUE,
+                    .sat    = RGB_MATRIX_DEFAULT_SAT,
+                    .val    = RGB_MATRIX_DEFAULT_VAL,
+                    .speed  = RGB_MATRIX_DEFAULT_SPD,
+                },
+                [N32_RGB_ZONE_INDICATOR] = {
+                    .enable = 1,
+                    .mode   = 1,
+                    .hue    = 0,
+                    .sat    = 255,
+                    .val    = RGB_MATRIX_DEFAULT_VAL,
+                    .speed  = RGB_MATRIX_DEFAULT_SPD,
+                },
+            },
+        };
         n32_runtime_config_needs_save = true;
     }
 
@@ -240,14 +355,28 @@ static void n32_runtime_config_sanitize(void) {
         n32_config.dma_release_frames = N32_MATRIX_DMA_RELEASE_CONFIRM_FRAMES;
         n32_runtime_config_needs_save = true;
     }
+
+#ifdef RGB_MATRIX_ENABLE
+    if (n32_config.rgb_selected_zone >= N32_RGB_ZONE_COUNT) {
+        n32_config.rgb_selected_zone  = N32_RGB_ZONE_AXIS;
+        n32_runtime_config_needs_save = true;
+    }
+
+    for (uint8_t zone = 0; zone < N32_RGB_ZONE_COUNT; ++zone) {
+        n32_rgb_sanitize_zone(&n32_config.rgb_zone[zone]);
+    }
+#endif
 }
 
 static void n32_runtime_config_apply(void) {
     n32_usb_set_report_rate_hz(n32_report_rate_hz());
+#ifdef RGB_MATRIX_ENABLE
+    n32_rgb_apply_axis_to_qmk();
+#endif
 }
 
 static void n32_runtime_config_load(void) {
-#if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 4
+#if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 25
     via_read_custom_config(&n32_config, 0, sizeof(n32_config));
 #endif
     n32_runtime_config_needs_save = false;
@@ -260,7 +389,7 @@ static void n32_runtime_config_load(void) {
 
 static void n32_runtime_config_save(void) {
     n32_runtime_config_sanitize();
-#if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 4
+#if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 25
     via_update_custom_config(&n32_config, 0, sizeof(n32_config));
 #endif
     n32_runtime_config_needs_save = false;
@@ -840,7 +969,7 @@ static void n32_tft_next_page(void) {
 #ifdef RGB_MATRIX_ENABLE
 led_config_t g_led_config = {
     {
-        {0, 1, NO_LED, NO_LED, NO_LED, NO_LED},
+        {0, 1, 2, 3, 4, 5},
         {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
         {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
         {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
@@ -848,11 +977,27 @@ led_config_t g_led_config = {
     },
     {
         {0, 0},
+        {45, 0},
+        {90, 0},
+        {134, 0},
+        {179, 0},
         {224, 0},
+        {0, 64},
+        {75, 64},
+        {149, 64},
+        {224, 64},
     },
     {
         LED_FLAG_KEYLIGHT,
-        LED_FLAG_INDICATOR,
+        LED_FLAG_KEYLIGHT,
+        LED_FLAG_KEYLIGHT,
+        LED_FLAG_KEYLIGHT,
+        LED_FLAG_KEYLIGHT,
+        LED_FLAG_KEYLIGHT,
+        LED_FLAG_UNDERGLOW,
+        LED_FLAG_UNDERGLOW,
+        LED_FLAG_UNDERGLOW,
+        LED_FLAG_UNDERGLOW,
     },
 };
 #endif
@@ -876,22 +1021,10 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
 
 #ifdef RGB_MATRIX_ENABLE
     if (keycode == QK_RGB_MATRIX_TOGGLE && record->event.pressed) {
-        switch (rgb_matrix_get_flags()) {
-            case LED_FLAG_ALL:
-                rgb_matrix_set_flags(LED_FLAG_KEYLIGHT | LED_FLAG_INDICATOR);
-                break;
-            case (LED_FLAG_KEYLIGHT | LED_FLAG_INDICATOR):
-                rgb_matrix_set_flags(LED_FLAG_UNDERGLOW);
-                break;
-            case LED_FLAG_UNDERGLOW:
-                rgb_matrix_set_flags(LED_FLAG_NONE);
-                rgb_matrix_set_color_all(0, 0, 0);
-                break;
-            default:
-                rgb_matrix_set_flags(LED_FLAG_ALL);
-                rgb_matrix_enable_noeeprom();
-                break;
-        }
+        n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+        zone->enable = !zone->enable;
+        n32_rgb_apply_axis_to_qmk();
+        n32_rgb_mark_save_pending();
         return false;
     }
 #endif
@@ -941,6 +1074,9 @@ void housekeeping_task_kb(void) {
 #ifdef RGB_MATRIX_ENABLE
     if (n32_rgb_save_pending && timer_elapsed32(n32_rgb_save_timer) > 1500) {
         n32_rgb_save_pending = false;
+        if (n32_runtime_config_needs_save) {
+            n32_runtime_config_save();
+        }
         eeconfig_force_flush_rgb_matrix();
         n32_rgb_tracef("RGB config saved\n");
     }
@@ -971,55 +1107,64 @@ static void n32_via_set_value(uint8_t *data) {
             n32_runtime_config_sanitize();
             break;
 #    ifdef RGB_MATRIX_ENABLE
-        case id_n32_rgb_enable:
+        case id_n32_rgb_enable: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
             if (value_data[0]) {
-                rgb_matrix_enable_noeeprom();
+                zone->enable = 1;
             } else {
-                n32_rgb_turn_off_now();
+                zone->enable = 0;
             }
-            n32_rgb_mark_save_pending();
-            break;
-        case id_n32_rgb_mode: {
-            if (value_data[0] == 0) {
-                n32_rgb_turn_off_now();
-            } else {
-                rgb_matrix_enable_noeeprom();
-                rgb_matrix_mode_noeeprom(n32_via_rgb_mode_to_qmk(value_data[0]));
-            }
+            n32_rgb_apply_axis_to_qmk();
             n32_rgb_mark_save_pending();
             break;
         }
-        case id_n32_rgb_hue:
-            rgb_matrix_sethsv_noeeprom(value_data[0], rgb_matrix_get_sat(), rgb_matrix_get_val());
+        case id_n32_rgb_mode: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            zone->mode = value_data[0];
+            n32_rgb_sanitize_zone(zone);
+            n32_rgb_apply_axis_to_qmk();
             n32_rgb_mark_save_pending();
             break;
-        case id_n32_rgb_sat:
-            rgb_matrix_sethsv_noeeprom(rgb_matrix_get_hue(), value_data[0], rgb_matrix_get_val());
+        }
+        case id_n32_rgb_hue: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            zone->hue = value_data[0];
+            n32_rgb_apply_axis_to_qmk();
             n32_rgb_mark_save_pending();
             break;
-        case id_n32_rgb_val:
-            rgb_matrix_sethsv_noeeprom(rgb_matrix_get_hue(), rgb_matrix_get_sat(), value_data[0] > RGB_MATRIX_MAXIMUM_BRIGHTNESS ? RGB_MATRIX_MAXIMUM_BRIGHTNESS : value_data[0]);
+        }
+        case id_n32_rgb_sat: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            zone->sat = value_data[0];
+            n32_rgb_apply_axis_to_qmk();
             n32_rgb_mark_save_pending();
             break;
-        case id_n32_rgb_speed:
-            rgb_matrix_set_speed_noeeprom(value_data[0]);
+        }
+        case id_n32_rgb_val: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            zone->val = n32_rgb_zone_value(value_data[0]);
+            n32_rgb_apply_axis_to_qmk();
             n32_rgb_mark_save_pending();
             break;
+        }
+        case id_n32_rgb_speed: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            zone->speed = value_data[0];
+            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_mark_save_pending();
+            break;
+        }
         case id_n32_rgb_zone:
-            switch (value_data[0]) {
-                case 0:
-                    rgb_matrix_set_flags_noeeprom(LED_FLAG_ALL);
-                    break;
-                case 1:
-                    rgb_matrix_set_flags_noeeprom(LED_FLAG_KEYLIGHT);
-                    break;
-                case 2:
-                    rgb_matrix_set_flags_noeeprom(LED_FLAG_INDICATOR);
-                    break;
-                default:
-                    rgb_matrix_set_flags_noeeprom(LED_FLAG_ALL);
-                    break;
-            }
+            n32_config.rgb_selected_zone = value_data[0] < N32_RGB_ZONE_COUNT ? value_data[0] : N32_RGB_ZONE_AXIS;
+            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_mark_save_pending();
+            break;
+        case id_n32_rgb_underglow_enable:
+            n32_config.rgb_zone[N32_RGB_ZONE_UNDERGLOW].enable = value_data[0] ? 1 : 0;
+            n32_rgb_mark_save_pending();
+            break;
+        case id_n32_rgb_indicator_enable:
+            n32_config.rgb_zone[N32_RGB_ZONE_INDICATOR].enable = value_data[0] ? 1 : 0;
             n32_rgb_mark_save_pending();
             break;
 #    endif
@@ -1044,36 +1189,44 @@ static void n32_via_get_value(uint8_t *data) {
             value_data[0] = n32_config.dma_release_frames;
             break;
 #    ifdef RGB_MATRIX_ENABLE
-        case id_n32_rgb_enable:
-            value_data[0] = rgb_matrix_is_enabled();
+        case id_n32_rgb_enable: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            value_data[0] = zone->enable;
             break;
-        case id_n32_rgb_mode:
-            value_data[0] = rgb_matrix_is_enabled() ? n32_qmk_rgb_mode_to_via(rgb_matrix_get_mode()) : 0;
+        }
+        case id_n32_rgb_mode: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            value_data[0] = zone->mode;
             break;
-        case id_n32_rgb_hue:
-            value_data[0] = rgb_matrix_get_hue();
+        }
+        case id_n32_rgb_hue: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            value_data[0] = zone->hue;
             break;
-        case id_n32_rgb_sat:
-            value_data[0] = rgb_matrix_get_sat();
+        }
+        case id_n32_rgb_sat: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            value_data[0] = zone->sat;
             break;
-        case id_n32_rgb_val:
-            value_data[0] = rgb_matrix_get_val();
+        }
+        case id_n32_rgb_val: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            value_data[0] = zone->val;
             break;
-        case id_n32_rgb_speed:
-            value_data[0] = rgb_matrix_get_speed();
+        }
+        case id_n32_rgb_speed: {
+            n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
+            value_data[0] = zone->speed;
             break;
+        }
         case id_n32_rgb_zone:
-            switch (rgb_matrix_get_flags()) {
-                case LED_FLAG_KEYLIGHT:
-                    value_data[0] = 1;
-                    break;
-                case LED_FLAG_INDICATOR:
-                    value_data[0] = 2;
-                    break;
-                default:
-                    value_data[0] = 0;
-                    break;
-            }
+            value_data[0] = n32_config.rgb_selected_zone;
+            break;
+        case id_n32_rgb_underglow_enable:
+            value_data[0] = n32_config.rgb_zone[N32_RGB_ZONE_UNDERGLOW].enable;
+            break;
+        case id_n32_rgb_indicator_enable:
+            value_data[0] = n32_config.rgb_zone[N32_RGB_ZONE_INDICATOR].enable;
             break;
 #    endif
     }
@@ -1223,12 +1376,10 @@ bool rgb_matrix_indicators_kb(void) {
 
     if (last_caps != led_state.caps_lock) {
         last_caps = led_state.caps_lock;
-        n32_rgb_tracef("RGB indicator: caps=%u led1=%s\n", led_state.caps_lock, led_state.caps_lock ? "white" : "effect");
+        n32_rgb_tracef("RGB indicator: caps=%u target=%u\n", led_state.caps_lock, (unsigned)N32_RGB_INDICATOR_LED_INDEX);
     }
 
-    if (led_state.caps_lock) {
-        rgb_matrix_set_color(1, 255, 255, 255);
-    }
+    n32_rgb_apply_zone_postprocess();
 
     return true;
 }
