@@ -59,6 +59,7 @@ void n32_usbhs_debug_snapshot(n32_usbhs_debug_counters_t *snapshot);
 void n32_usbhs_shared_tx_done(void);
 #ifdef RAW_ENABLE
 void n32_usbhs_raw_tx_done(void);
+void n32_usbhs_raw_tx_reset(void);
 void n32_usbhs_raw_hid_task(void);
 #endif
 void n32_usbhs_user_init(void);

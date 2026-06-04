@@ -191,6 +191,7 @@ static uint8_t n32_usbhs_keyboard_init(void *pdev, uint8_t cfgidx) {
     USBDEV_EP_Open(pdev, N32_USBHS_RAW_OUT_EP, RAW_OUT_PACKET, USB_EP_INT);
     USBDEV_EP_PrepareRx(pdev, N32_USBHS_RAW_OUT_EP, raw_out_report, RAW_OUT_PACKET);
     USBDEV_SetEPStatus(pdev, N32_USBHS_RAW_OUT_EP, USB_EP_RX_VALID);
+    n32_usbhs_raw_tx_reset();
 #endif
 
 #ifdef USB_DEDICATED_EP_ENABLED
@@ -226,6 +227,7 @@ static uint8_t n32_usbhs_keyboard_deinit(void *pdev, uint8_t cfgidx) {
 #ifdef RAW_ENABLE
     USBDEV_EP_Close(pdev, N32_USBHS_RAW_IN_EP);
     USBDEV_EP_Close(pdev, N32_USBHS_RAW_OUT_EP);
+    n32_usbhs_raw_tx_reset();
 #endif
     return USBD_OK;
 }
@@ -423,6 +425,9 @@ void n32_usbhs_user_init(void) {
 void n32_usbhs_user_device_reset(uint8_t speed) {
     n32_usbhs_debug_counters.reset_count++;
     n32_usbhs_debug_counters.last_speed = speed;
+#ifdef RAW_ENABLE
+    n32_usbhs_raw_tx_reset();
+#endif
     USB_EP0_OutStart(&USB_dev);
 }
 void n32_usbhs_user_device_configured(void) {

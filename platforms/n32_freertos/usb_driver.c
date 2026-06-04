@@ -49,6 +49,8 @@ static volatile uint8_t hs_shared_prev_xfer_complete = 1;
 static volatile uint8_t hs_raw_prev_xfer_complete    = 1;
 static uint8_t          hs_shared_report[HID_IN_PACKET] __attribute__((aligned(4)));
 static uint8_t          hs_shared_pending_report[HID_IN_PACKET] __attribute__((aligned(4)));
+static uint8_t          hs_raw_pending_report[RAW_IN_PACKET] __attribute__((aligned(4)));
+static volatile uint8_t hs_raw_report_pending;
 static uint8_t          hs_shared_pending_length;
 static volatile uint8_t hs_shared_report_pending;
 static uint8_t          hs_raw_report[RAW_IN_PACKET] __attribute__((aligned(4)));
@@ -69,12 +71,29 @@ static uint32_t n32_usb_report_interval_cycles;
 static uint32_t n32_usb_last_shared_tx_cycle;
 static uint32_t n32_usb_dropped_shared_reports;
 static uint32_t n32_usb_report_slot_timeouts;
+static uint32_t n32_usb_raw_tx_pending_reports;
+static uint32_t n32_usb_raw_tx_dropped_reports;
 static bool     n32_usb_cycle_counter_ready;
 #ifndef N32_USB_SPEED_FS
 static volatile uint8_t n32_usb_report_slot_force_ready;
 #endif
 
 #ifndef N32_USB_SPEED_FS
+static uint32_t n32_usb_irq_save(void) {
+    uint32_t primask = __get_PRIMASK();
+
+    __disable_irq();
+    __DSB();
+    __ISB();
+    return primask;
+}
+
+static void n32_usb_irq_restore(uint32_t primask) {
+    __DSB();
+    __ISB();
+    __set_PRIMASK(primask);
+}
+
 static void n32_usbhs_config_clk(void) {
     n32_usbhs_trace("USB HS clk begin hse=%lu sys=%lu ctrl1=%08lX cfg3=%08lX\n", (unsigned long)HSE_VALUE, (unsigned long)SystemCoreClock, (unsigned long)RCC->USBHSCTRL1, (unsigned long)RCC->CFG3);
 
@@ -191,6 +210,12 @@ static void n32_usb_hs_flush_shared_report(void) {
     hs_shared_report_pending = 0;
     n32_usb_hs_start_shared_tx(hs_shared_pending_report, length);
 }
+
+#    ifdef RAW_ENABLE
+static void n32_usb_hs_start_raw_tx(void) {
+    USBDEV_EP_Tx(&USB_dev, N32_USBHS_RAW_IN_EP, hs_raw_report, RAW_IN_PACKET);
+}
+#    endif
 #endif
 
 void n32_usb_init(void) {
@@ -259,6 +284,7 @@ void n32_usb_task(void) {
             xprintf("USB hs dbg: status=%lu speed=%lu cfg=%lu addr=%lu rst=%lu conf=%lu susp=%lu res=%lu conn=%lu disc=%lu init=%lu deinit=%lu setup=%lu getcfg=%lu ep0=%lu in=%lu out=%lu raw=%lu/%lu/%lu/%lu rawlen=%u/%u last=%02X/%02X/%04X/%04X/%04X spd=%u cfgidx=%u ep=%u drop=%lu slot_to=%lu ctrl1=%08lX ctrl2=%08lX cfg3=%08lX ahb=%08lX gint=%08lX/%08lX gahb=%08lX gcfg=%08lX dctl=%08lX dcfg=%08lX dsts=%08lX daep=%08lX/%08lX ep0in=%08lX/%08lX ep0out=%08lX/%08lX/%08lX rawin%u=%08lX/%08lX/%08lX rawout%u=%08lX/%08lX/%08lX\n", (unsigned long)USB_dev.dev.device_status, (unsigned long)USB_dev.cfg.speed, (unsigned long)USB_dev.dev.device_config, (unsigned long)USB_dev.dev.device_address, (unsigned long)hs_debug.reset_count, (unsigned long)hs_debug.configured_count, (unsigned long)hs_debug.suspended_count, (unsigned long)hs_debug.resumed_count, (unsigned long)hs_debug.connected_count, (unsigned long)hs_debug.disconnected_count, (unsigned long)hs_debug.class_init_count, (unsigned long)hs_debug.class_deinit_count, (unsigned long)hs_debug.setup_count, (unsigned long)hs_debug.get_config_count, (unsigned long)hs_debug.ep0_rx_count, (unsigned long)hs_debug.datain_count, (unsigned long)hs_debug.dataout_count, (unsigned long)hs_debug.raw_ep0_out_count, (unsigned long)hs_debug.raw_out_count, (unsigned long)hs_debug.raw_task_count, (unsigned long)hs_debug.raw_drop_count, hs_debug.last_raw_ep0_length, hs_debug.last_raw_out_length, hs_debug.last_request_type, hs_debug.last_request, hs_debug.last_value, hs_debug.last_index, hs_debug.last_length, hs_debug.last_speed, hs_debug.last_cfgidx, hs_debug.last_ep, (unsigned long)n32_usb_dropped_shared_reports, (unsigned long)n32_usb_report_slot_timeouts, (unsigned long)RCC->USBHSCTRL1, (unsigned long)RCC->USBHSCTRL2, (unsigned long)RCC->CFG3, (unsigned long)RCC->AHB1PCLKEN, (unsigned long)USB_READ_REG32(&USB_dev.regs.GCSR->GINTSTS), (unsigned long)USB_READ_REG32(&USB_dev.regs.GCSR->GINTEN), (unsigned long)USB_READ_REG32(&USB_dev.regs.GCSR->GAHBCFG), (unsigned long)USB_READ_REG32(&USB_dev.regs.GCSR->GCFG), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DCTRL), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DCFG), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DSTS), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DAEPINTSTS), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DAEPINTEN), (unsigned long)USB_READ_REG32(&USB_dev.regs.INEPCSR[0]->DINEPCTRL), (unsigned long)USB_READ_REG32(&USB_dev.regs.INEPCSR[0]->DINEPTXSIZ), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[0]->DOUTEPCTRL), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[0]->DOUTEPTXSIZ), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[0]->DOUTEPINTSTS), raw_in_ep, (unsigned long)USB_READ_REG32(&USB_dev.regs.INEPCSR[raw_in_ep]->DINEPCTRL), (unsigned long)USB_READ_REG32(&USB_dev.regs.INEPCSR[raw_in_ep]->DINEPTXSIZ), (unsigned long)USB_READ_REG32(&USB_dev.regs.INEPCSR[raw_in_ep]->DINEPINTSTS), raw_out_ep, (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[raw_out_ep]->DOUTEPCTRL), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[raw_out_ep]->DOUTEPTXSIZ), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[raw_out_ep]->DOUTEPINTSTS));
             xprintf("USB hs epmask: daep=%08lX/%08lX dinepm=%08lX doutepm=%08lX hidout1=%08lX/%08lX/%08lX rawout%u=%08lX/%08lX/%08lX\n", (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DAEPINTSTS), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DAEPINTEN), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DINEPINTEN), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DOUTEPINTEN), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[N32_USBHS_HID_OUT_EP & 0x0FU]->DOUTEPCTRL), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[N32_USBHS_HID_OUT_EP & 0x0FU]->DOUTEPTXSIZ), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[N32_USBHS_HID_OUT_EP & 0x0FU]->DOUTEPINTSTS), raw_out_ep, (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[raw_out_ep]->DOUTEPCTRL), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[raw_out_ep]->DOUTEPTXSIZ), (unsigned long)USB_READ_REG32(&USB_dev.regs.OUTEPCSR[raw_out_ep]->DOUTEPINTSTS));
             xprintf("USB hs deepmask: deep=%08lX/%08lX dinex%u=%08lX doutx%u=%08lX rawinx%u=%08lX rawoutx%u=%08lX\n", (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DEEPINTSTS), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DEEPINTEN), (N32_USBHS_HID_IN_EP & 0x0FU), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DINEPXINTEN[N32_USBHS_HID_IN_EP & 0x0FU]), (N32_USBHS_HID_OUT_EP & 0x0FU), (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DOUTEPXINTEN[N32_USBHS_HID_OUT_EP & 0x0FU]), raw_in_ep, (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DINEPXINTEN[raw_in_ep]), raw_out_ep, (unsigned long)USB_READ_REG32(&USB_dev.regs.DCSR->DOUTEPXINTEN[raw_out_ep]));
+            xprintf("USB hs rawtx: pending=%lu drop=%lu busy=%u pend=%u\n", (unsigned long)n32_usb_raw_tx_pending_reports, (unsigned long)n32_usb_raw_tx_dropped_reports, (unsigned)!hs_raw_prev_xfer_complete, (unsigned)hs_raw_report_pending);
             prev_hs_debug = hs_debug;
         }
 #    endif
@@ -421,18 +447,25 @@ void n32_usb_send_raw_hid(uint8_t *data, uint8_t length) {
         return;
     }
 
-    uint32_t timeout = (SystemCoreClock ? SystemCoreClock : 240000000U) / 1000U;
-    while (!hs_raw_prev_xfer_complete && timeout-- > 0) {
-        __NOP();
+    bool     start_now = false;
+    uint32_t primask   = n32_usb_irq_save();
+
+    if (hs_raw_prev_xfer_complete) {
+        memcpy(hs_raw_report, data, RAW_IN_PACKET);
+        hs_raw_prev_xfer_complete = 0;
+        start_now                 = true;
+    } else if (!hs_raw_report_pending) {
+        memcpy(hs_raw_pending_report, data, RAW_IN_PACKET);
+        hs_raw_report_pending = 1;
+        n32_usb_raw_tx_pending_reports++;
+    } else {
+        n32_usb_raw_tx_dropped_reports++;
     }
 
-    if (!hs_raw_prev_xfer_complete) {
-        return;
+    n32_usb_irq_restore(primask);
+    if (start_now) {
+        n32_usb_hs_start_raw_tx();
     }
-
-    memcpy(hs_raw_report, data, RAW_IN_PACKET);
-    hs_raw_prev_xfer_complete = 0;
-    USBDEV_EP_Tx(&USB_dev, N32_USBHS_RAW_IN_EP, hs_raw_report, RAW_IN_PACKET);
 #    endif
 }
 #endif
@@ -447,8 +480,33 @@ void n32_usbhs_shared_tx_done(void) {
 }
 
 #    ifdef RAW_ENABLE
-void n32_usbhs_raw_tx_done(void) {
+void n32_usbhs_raw_tx_reset(void) {
+    uint32_t primask = n32_usb_irq_save();
+
     hs_raw_prev_xfer_complete = 1;
+    hs_raw_report_pending     = 0;
+
+    n32_usb_irq_restore(primask);
+}
+
+void n32_usbhs_raw_tx_done(void) {
+    bool     start_next = false;
+    uint32_t primask    = n32_usb_irq_save();
+
+    if (USB_dev.dev.device_status == USB_CONFIGURED && hs_raw_report_pending) {
+        memcpy(hs_raw_report, hs_raw_pending_report, RAW_IN_PACKET);
+        hs_raw_report_pending     = 0;
+        hs_raw_prev_xfer_complete = 0;
+        start_next                = true;
+    } else {
+        hs_raw_report_pending     = 0;
+        hs_raw_prev_xfer_complete = 1;
+    }
+
+    n32_usb_irq_restore(primask);
+    if (start_next) {
+        n32_usb_hs_start_raw_tx();
+    }
 }
 #    endif
 #endif
