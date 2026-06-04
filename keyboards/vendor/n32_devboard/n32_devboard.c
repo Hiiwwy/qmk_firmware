@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "quantum.h"
+#include "n32_rgb_config.h"
 #include "raw_hid.h"
 #include "usb_driver.h"
 
@@ -28,7 +29,9 @@
 #    endif
 #endif
 
+// N32 自有运行时配置版本号；变更 VIA 自定义配置布局时需要递增。
 #define N32_CONFIG_MAGIC 0xAE
+// USB 回报率索引映射：0=1k, 1=2k, 2=4k, 3=8k。
 #if N32_USB_REPORT_RATE_DEFAULT == 1000
 #    define N32_CONFIG_DEFAULT_REPORT_RATE_INDEX 0
 #elif N32_USB_REPORT_RATE_DEFAULT == 2000
@@ -54,16 +57,7 @@
 #define N32_CONFIG_MAX_DMA_PRESS_FRAMES 8
 #define N32_CONFIG_MIN_DMA_RELEASE_FRAMES 4
 #define N32_CONFIG_MAX_DMA_RELEASE_FRAMES 32
-#define N32_RGB_ZONE_AXIS 0
-#define N32_RGB_ZONE_UNDERGLOW 1
-#define N32_RGB_ZONE_INDICATOR 2
-#define N32_RGB_ZONE_COUNT 3
-#define N32_RGB_MODE_OFF 0
-#define N32_RGB_MODE_SOLID 1
-#define N32_RGB_AXIS_LED_COUNT 6
-#define N32_RGB_UNDERGLOW_LED_COUNT 4
-#define N32_RGB_INDICATOR_LED_INDEX 1
-
+// VIA 自定义控件 ID；必须和 VIA JSON 中的 custom value ID 保持一致。
 enum n32_via_value_id {
     id_n32_report_rate        = 1,
     id_n32_debounce           = 2,
@@ -80,15 +74,7 @@ enum n32_via_value_id {
     id_n32_rgb_indicator_enable = 13,
 };
 
-typedef struct {
-    uint8_t enable;
-    uint8_t mode;
-    uint8_t hue;
-    uint8_t sat;
-    uint8_t val;
-    uint8_t speed;
-} n32_rgb_zone_config_t;
-
+// 通过 VIA custom config 持久化的 N32 运行时配置。
 typedef struct {
     uint8_t magic;
     uint8_t report_rate_index;
@@ -100,6 +86,7 @@ typedef struct {
     n32_rgb_zone_config_t rgb_zone[N32_RGB_ZONE_COUNT];
 } n32_runtime_config_t;
 
+// 默认运行时配置；EEPROM magic 不匹配时会恢复到这组默认值。
 static n32_runtime_config_t n32_config = {
     .magic              = N32_CONFIG_MAGIC,
     .report_rate_index  = N32_CONFIG_DEFAULT_REPORT_RATE_INDEX,
@@ -207,95 +194,18 @@ static uint16_t n32_report_rate_hz(void) {
 }
 
 #ifdef RGB_MATRIX_ENABLE
-static uint8_t n32_via_rgb_mode_to_qmk(uint8_t mode) {
-    switch (mode) {
-        case 2:
-            return RGB_MATRIX_BREATHING;
-        case 3:
-            return RGB_MATRIX_CYCLE_ALL;
-        case 4:
-            return RGB_MATRIX_CYCLE_LEFT_RIGHT;
-        case 5:
-            return RGB_MATRIX_HUE_BREATHING;
-        case 6:
-            return RGB_MATRIX_RAINBOW_MOVING_CHEVRON;
-        case 7:
-            return RGB_MATRIX_SOLID_REACTIVE_SIMPLE;
-        case 1:
-        default:
-            return RGB_MATRIX_SOLID_COLOR;
-    }
-}
-
 static void n32_rgb_mark_save_pending(void) {
     n32_rgb_save_pending          = true;
     n32_runtime_config_needs_save = true;
     n32_rgb_save_timer            = timer_read32();
 }
 
-static uint8_t n32_rgb_zone_value(uint8_t value) {
-    return value > RGB_MATRIX_MAXIMUM_BRIGHTNESS ? RGB_MATRIX_MAXIMUM_BRIGHTNESS : value;
-}
-
-static rgb_t n32_rgb_zone_rgb(const n32_rgb_zone_config_t *zone) {
-    hsv_t hsv = {
-        .h = zone->hue,
-        .s = zone->sat,
-        .v = n32_rgb_zone_value(zone->val),
-    };
-
-    return hsv_to_rgb(hsv);
-}
-
-static void n32_rgb_sanitize_zone(n32_rgb_zone_config_t *zone) {
-    zone->enable = zone->enable ? 1 : 0;
-    if (zone->mode > 7) {
-        zone->mode = N32_RGB_MODE_SOLID;
-    }
-    zone->val = n32_rgb_zone_value(zone->val);
-}
-
-static void n32_rgb_apply_axis_to_qmk(void) {
-    const n32_rgb_zone_config_t *axis = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
-
-    rgb_matrix_set_flags_noeeprom(LED_FLAG_ALL);
-    rgb_matrix_enable_noeeprom();
-
-    if (axis->mode > N32_RGB_MODE_OFF) {
-        rgb_matrix_mode_noeeprom(n32_via_rgb_mode_to_qmk(axis->mode));
-        rgb_matrix_sethsv_noeeprom(axis->hue, axis->sat, n32_rgb_zone_value(axis->val));
-        rgb_matrix_set_speed_noeeprom(axis->speed);
-    }
-}
-
-static void n32_rgb_set_led_range(uint8_t first, uint8_t count, rgb_t color) {
-    for (uint8_t i = 0; i < count && first + i < RGB_MATRIX_LED_COUNT; ++i) {
-        rgb_matrix_set_color(first + i, color.r, color.g, color.b);
-    }
-}
-
-static void n32_rgb_apply_zone_postprocess(void) {
-    const n32_rgb_zone_config_t *axis      = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
-    const n32_rgb_zone_config_t *underglow = &n32_config.rgb_zone[N32_RGB_ZONE_UNDERGLOW];
-    const n32_rgb_zone_config_t *indicator = &n32_config.rgb_zone[N32_RGB_ZONE_INDICATOR];
-    rgb_t                        black     = {0, 0, 0};
-
-    if (!axis->enable || axis->mode == N32_RGB_MODE_OFF) {
-        n32_rgb_set_led_range(0, N32_RGB_AXIS_LED_COUNT, black);
-    }
-
-    if (axis->mode == N32_RGB_MODE_OFF || !underglow->enable) {
-        n32_rgb_set_led_range(N32_RGB_AXIS_LED_COUNT, N32_RGB_UNDERGLOW_LED_COUNT, black);
-    }
-
-    led_t led_state = host_keyboard_led_state();
-    if (led_state.caps_lock && indicator->enable && indicator->mode != N32_RGB_MODE_OFF && N32_RGB_INDICATOR_LED_INDEX < RGB_MATRIX_LED_COUNT) {
-        rgb_t color = n32_rgb_zone_rgb(indicator);
-        rgb_matrix_set_color(N32_RGB_INDICATOR_LED_INDEX, color.r, color.g, color.b);
-    }
+static void n32_rgb_apply_main_effect(void) {
+    n32_rgb_apply_main_effect_to_qmk(&n32_config.rgb_zone[N32_RGB_ZONE_AXIS]);
 }
 #endif
 
+// 运行时配置入口校验：版本不匹配或参数越界时恢复到安全默认值。
 static void n32_runtime_config_sanitize(void) {
     if (n32_config.magic != N32_CONFIG_MAGIC) {
         n32_config = (n32_runtime_config_t){
@@ -368,13 +278,15 @@ static void n32_runtime_config_sanitize(void) {
 #endif
 }
 
+// 把持久化配置应用到 USB 回报率和 RGB Matrix 当前状态。
 static void n32_runtime_config_apply(void) {
     n32_usb_set_report_rate_hz(n32_report_rate_hz());
 #ifdef RGB_MATRIX_ENABLE
-    n32_rgb_apply_axis_to_qmk();
+    n32_rgb_apply_main_effect();
 #endif
 }
 
+// 从 VIA custom config 读取 N32 自有配置。
 static void n32_runtime_config_load(void) {
 #if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 25
     via_read_custom_config(&n32_config, 0, sizeof(n32_config));
@@ -387,6 +299,7 @@ static void n32_runtime_config_load(void) {
     }
 }
 
+// 保存 N32 自有配置到 VIA custom config。
 static void n32_runtime_config_save(void) {
     n32_runtime_config_sanitize();
 #if defined(VIA_ENABLE) && VIA_EEPROM_CUSTOM_CONFIG_SIZE >= 25
@@ -396,6 +309,7 @@ static void n32_runtime_config_save(void) {
 }
 
 #ifdef VIA_ENABLE
+// VIA 初始化时检查 N32 自有配置 magic，不匹配则重置 VIA EEPROM 区域。
 void via_init_kb(void) {
     uint8_t magic = 0xFF;
 
@@ -966,42 +880,7 @@ static void n32_tft_next_page(void) {
 }
 #endif
 
-#ifdef RGB_MATRIX_ENABLE
-led_config_t g_led_config = {
-    {
-        {0, 1, 2, 3, 4, 5},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-        {NO_LED, NO_LED, NO_LED, NO_LED, NO_LED, NO_LED},
-    },
-    {
-        {0, 0},
-        {45, 0},
-        {90, 0},
-        {134, 0},
-        {179, 0},
-        {224, 0},
-        {0, 64},
-        {75, 64},
-        {149, 64},
-        {224, 64},
-    },
-    {
-        LED_FLAG_KEYLIGHT,
-        LED_FLAG_KEYLIGHT,
-        LED_FLAG_KEYLIGHT,
-        LED_FLAG_KEYLIGHT,
-        LED_FLAG_KEYLIGHT,
-        LED_FLAG_KEYLIGHT,
-        LED_FLAG_UNDERGLOW,
-        LED_FLAG_UNDERGLOW,
-        LED_FLAG_UNDERGLOW,
-        LED_FLAG_UNDERGLOW,
-    },
-};
-#endif
-
+// 键盘按键处理入口：记录调试计数，并接管 TFT 翻页和 RGB Toggle。
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (!process_record_user(keycode, record)) {
         return false;
@@ -1021,9 +900,10 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
 
 #ifdef RGB_MATRIX_ENABLE
     if (keycode == QK_RGB_MATRIX_TOGGLE && record->event.pressed) {
+        // QMK RGB Toggle 在这里映射为 Axis 区域开关，不影响 Underglow/Indicator。
         n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
         zone->enable = !zone->enable;
-        n32_rgb_apply_axis_to_qmk();
+        n32_rgb_apply_main_effect();
         n32_rgb_mark_save_pending();
         return false;
     }
@@ -1032,6 +912,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     return true;
 }
 
+// 键盘初始化后应用 VIA 保存的 N32 自有运行时配置。
 void keyboard_post_init_kb(void) {
     n32_runtime_config_load();
     keyboard_post_init_user();
@@ -1055,6 +936,7 @@ void keyboard_post_init_kb(void) {
 #endif
 }
 
+// 周期任务：处理 TFT 刷新以及延迟保存 RGB/VIA 配置，避免频繁写 Flash。
 void housekeeping_task_kb(void) {
 #ifdef QUANTUM_PAINTER_ENABLE
     if (n32_tft_page != 3 && timer_elapsed32(n32_tft_refresh_timer) > 500) {
@@ -1084,6 +966,7 @@ void housekeeping_task_kb(void) {
 }
 
 #ifdef VIA_ENABLE
+// VIA 写自定义值入口。value_id 必须和 VIA JSON 的 id_n32_* 保持一致。
 static void n32_via_set_value(uint8_t *data) {
     uint8_t *value_id   = &data[0];
     uint8_t *value_data = &data[1];
@@ -1114,7 +997,7 @@ static void n32_via_set_value(uint8_t *data) {
             } else {
                 zone->enable = 0;
             }
-            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_apply_main_effect();
             n32_rgb_mark_save_pending();
             break;
         }
@@ -1122,41 +1005,41 @@ static void n32_via_set_value(uint8_t *data) {
             n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
             zone->mode = value_data[0];
             n32_rgb_sanitize_zone(zone);
-            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_apply_main_effect();
             n32_rgb_mark_save_pending();
             break;
         }
         case id_n32_rgb_hue: {
             n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
             zone->hue = value_data[0];
-            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_apply_main_effect();
             n32_rgb_mark_save_pending();
             break;
         }
         case id_n32_rgb_sat: {
             n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
             zone->sat = value_data[0];
-            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_apply_main_effect();
             n32_rgb_mark_save_pending();
             break;
         }
         case id_n32_rgb_val: {
             n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
             zone->val = n32_rgb_zone_value(value_data[0]);
-            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_apply_main_effect();
             n32_rgb_mark_save_pending();
             break;
         }
         case id_n32_rgb_speed: {
             n32_rgb_zone_config_t *zone = &n32_config.rgb_zone[N32_RGB_ZONE_AXIS];
             zone->speed = value_data[0];
-            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_apply_main_effect();
             n32_rgb_mark_save_pending();
             break;
         }
         case id_n32_rgb_zone:
             n32_config.rgb_selected_zone = value_data[0] < N32_RGB_ZONE_COUNT ? value_data[0] : N32_RGB_ZONE_AXIS;
-            n32_rgb_apply_axis_to_qmk();
+            n32_rgb_apply_main_effect();
             n32_rgb_mark_save_pending();
             break;
         case id_n32_rgb_underglow_enable:
@@ -1171,6 +1054,7 @@ static void n32_via_set_value(uint8_t *data) {
     }
 }
 
+// VIA 读自定义值入口，用于 VIA 打开菜单时回填当前配置。
 static void n32_via_get_value(uint8_t *data) {
     uint8_t *value_id   = &data[0];
     uint8_t *value_data = &data[1];
@@ -1232,6 +1116,7 @@ static void n32_via_get_value(uint8_t *data) {
     }
 }
 
+// VIA custom value 通道分发：set/get/save 都在这里转到 N32 自有配置。
 void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
     uint8_t *command_id        = &data[0];
     uint8_t *channel_id        = &data[1];
@@ -1262,6 +1147,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
 #endif
 
 #ifdef VIA_ENABLE
+// VIA 原生命令扩展：这里补齐矩阵测试读取，并可选处理 TFT 图片上传协议。
 bool via_command_kb(uint8_t *data, uint8_t length) {
     if (length >= 32 && data[0] == id_get_keyboard_value && data[1] == id_switch_matrix_state) {
         uint8_t offset = data[2];
@@ -1366,6 +1252,7 @@ bool via_command_kb(uint8_t *data, uint8_t length) {
 #endif
 
 #ifdef RGB_MATRIX_ENABLE
+// RGB Matrix 每帧后处理入口：实现区域关闭和 Caps 指示灯覆盖。
 bool rgb_matrix_indicators_kb(void) {
     if (!rgb_matrix_indicators_user()) {
         return false;
@@ -1379,7 +1266,7 @@ bool rgb_matrix_indicators_kb(void) {
         n32_rgb_tracef("RGB indicator: caps=%u target=%u\n", led_state.caps_lock, (unsigned)N32_RGB_INDICATOR_LED_INDEX);
     }
 
-    n32_rgb_apply_zone_postprocess();
+    n32_rgb_apply_zone_postprocess(&n32_config.rgb_zone[N32_RGB_ZONE_AXIS], &n32_config.rgb_zone[N32_RGB_ZONE_UNDERGLOW], &n32_config.rgb_zone[N32_RGB_ZONE_INDICATOR]);
 
     return true;
 }
